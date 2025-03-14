@@ -1,0 +1,7 @@
+<library path="lib/libleebots_local_planner">
+  <class name="leebots_local_planner/LeebotsPlannerROS" type="leebots_local_planner::LeebotsPlannerROS" base_class_type="nav_core::BaseLocalPlanner">
+    <description>
+      Leebots Plugin for BaseLocalPlanner.
+    </description>
+  </class>
+</library>
