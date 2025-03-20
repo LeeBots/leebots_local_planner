@@ -1,5 +1,5 @@
 located : jacakl_ws > src 
-
+'''
 # make env
 pip3 install defusedxml rospkg netifaces numpy
 cd ~/barn_ws/
@@ -23,3 +23,4 @@ rosdep install -y --from-paths . --ignore-src --rosdistro=noetic
 pip install empy==3.3.4
 # cmake_err: changing -std=c++11 to -std=c++17 in jackal_helper/CMakeLists.txt line 3
 catkin_make
+'''
