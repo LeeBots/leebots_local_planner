@@ -124,9 +124,8 @@ class GazeboEnv:
     def lidar_callback(self, msg):
         self.sensor_data = np.ones(self.environment_dim) * 10
         pc2_msg = self.lp.projectLaser(msg)
-        self.sensor_data = pc2.read_points_numpy(pc2_msg)
+        self.sensor_data = np.array(pc2.read_points_list(pc2_msg))
 
-    
     def costmap_callback(self, msg):
         rospy.loginfo("Received Costmap data!")
 
@@ -148,8 +147,7 @@ class GazeboEnv:
         # Publish the robot action
         vel_cmd = Twist()
         vel_cmd.linear.x = action[0]
-        vel_cmd.linear.y = action [1]
-        vel_cmd.angular.z = action[2]
+        vel_cmd.angular.z = action[1]
         self.vel_pub.publish(vel_cmd) #publish vel_cmd
 
         self.gazebo_sim.unpause()
@@ -181,7 +179,7 @@ class GazeboEnv:
             target = True
             done = True
 
-        robot_state = [distance, action[0], action[1], action[2]]
+        robot_state = [distance, action[0], action[1]]
         state = np.append(robot_state, lidar_state)
         reward = self.get_reward(target, collision, action)
         return state, reward, done, target

@@ -246,7 +246,7 @@ if save_model and not os.path.exists("./pytorch_models"):
 
 # Create the training environment
 environment_dim = 100
-robot_dim = 4
+robot_dim = 3
 
 
 ###
@@ -260,8 +260,8 @@ time.sleep(5)
 torch.manual_seed(seed)
 np.random.seed(seed)
 state_dim = environment_dim + robot_dim
-action_dim = 3
-max_action = 3
+action_dim = 2
+max_action = 1
 
 # Create the network
 network = TD3(state_dim, action_dim, max_action)
