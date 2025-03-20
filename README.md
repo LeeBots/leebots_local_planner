@@ -1,5 +1,7 @@
 located : jacakl_ws > src 
 
+##install the-barn-challenge pkg
+
 ```bash
 # make env
 pip3 install defusedxml rospkg netifaces numpy
