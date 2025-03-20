@@ -38,8 +38,9 @@ python3 run.py --world_idx 0
 
 ## 2. Train leebots_local_planner
 ```bash
-source ../../../devel/setup.sh
-python3 train_leebots_td3.py
+$cd ~/barn_ws/jackal_ws/src/leebots_local_planner/scripts
+$source ../../../devel/setup.sh
+$python3 train_leebots_td3.py
 ```
 
 #### reference code
