@@ -94,6 +94,11 @@ class GazeboEnv:
         init_coor = (self.init_position[0], self.init_position[1])
         goal_coor = (self.init_position[0] + self.goal_position[0], self.init_position[1] + self.goal_position[1])
         print("g3")
+        """
+        
+        ToDO : Gazebo Error
+        
+        """
         pos = self.gazebo_sim.get_model_state().pose.position
         print("g4")
         curr_coor = (pos.x, pos.y)
