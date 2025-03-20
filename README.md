@@ -1,6 +1,4 @@
-located : jacakl_ws > src 
-
-##install the-barn-challenge pkg
+## 0. install and run the-barn-challenge pkg
 
 ```bash
 # make env
@@ -26,4 +24,14 @@ rosdep install -y --from-paths . --ignore-src --rosdistro=noetic
 pip install empy==3.3.4
 # cmake_err: changing -std=c++11 to -std=c++17 in jackal_helper/CMakeLists.txt line 3
 catkin_make
+
+# run simulation
+
+source ../../devel/setup.sh
+python3 run.py --world_idx 0
+```
+## 1. install leebots_local_planner
+```bash
+ $cd ~/barn_ws/jackal_ws/src/leebots_local_planner
+ $git clone 
 ```
