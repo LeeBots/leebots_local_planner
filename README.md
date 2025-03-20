@@ -35,3 +35,10 @@ python3 run.py --world_idx 0
  $cd ~/barn_ws/jackal_ws/src/leebots_local_planner
  $git clone https://github.com/LeeBots/leebots_local_planner.git
 ```
+#### reference code
+```bash
+https://github.com/reiniscimurs/DRL-robot-navigation/blob/main/TD3/velodyne_env.py
+https://github.com/reiniscimurs/DRL-robot-navigation/blob/main/TD3/train_velodyne_td3.py
+https://github.com/reiniscimurs/DRL-robot-navigation/blob/main/TD3/replay_buffer.py
+https://github.com/Daffan/the-barn-challenge/blob/main/run.py
+```
