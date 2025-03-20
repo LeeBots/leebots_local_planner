@@ -43,7 +43,6 @@ class GazeboEnv:
         self.lp = LaserGeometry.LaserProjection()
         # Gazebo 환경 로드
         self.init_gazebo()
-        print("bo")
 
         # # ROS 퍼블리셔 및 서브스크라이버 설정
         self.init_ros()
@@ -144,7 +143,8 @@ class GazeboEnv:
         # Publish the robot action
         vel_cmd = Twist()
         vel_cmd.linear.x = action[0]
-        vel_cmd.angular.z = action[1]
+        vel_cmd.linear.y = action [1]
+        vel_cmd.angular.z = action[2]
         self.vel_pub.publish(vel_cmd) #publish vel_cmd
 
         self.gazebo_sim.unpause()
@@ -176,7 +176,7 @@ class GazeboEnv:
             target = True
             done = True
 
-        robot_state = [distance, action[0], action[1]]
+        robot_state = [distance, action[0], action[1], action[2]]
         state = np.append(robot_state, lidar_state)
         reward = self.get_reward(target, collision, action)
         return state, reward, done, target
@@ -199,7 +199,7 @@ class GazeboEnv:
         l_state = self.sensor_data[:]
         lidar_state = [l_state]
 
-        robot_state = [distance, 0.0, 0.0]
+        robot_state = [distance, 0.0, 0.0, 0.0]
         state = np.append(robot_state, lidar_state)
         
         return state
@@ -207,7 +207,6 @@ class GazeboEnv:
     def terminate(self):
         """Gazebo 환경 종료"""
         self.gazebo_process.terminate()
-        self.gazebo_process.wait()
 
     def observe_collision(self):
         # 현재 로봇 위치 가져오기
