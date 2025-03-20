@@ -33,5 +33,5 @@ python3 run.py --world_idx 0
 ## 1. install leebots_local_planner
 ```bash
  $cd ~/barn_ws/jackal_ws/src/leebots_local_planner
- $git clone 
+ $git clone https://github.com/LeeBots/leebots_local_planner.git
 ```
