@@ -41,12 +41,21 @@ class GazeboEnv:
         self.environment_dim = environment_dim
         self.last_odom = None
         self.lp = LaserGeometry.LaserProjection()
+
+        self.gaps = [[-np.pi / 2 - 0.03, -np.pi / 2 + np.pi / self.environment_dim]]
+        for m in range(self.environment_dim - 1):
+            self.gaps.append(
+                [self.gaps[m][1], self.gaps[m][1] + np.pi / self.environment_dim]
+            )
+        self.gaps[-1][-1] += 0.03
+
         # Gazebo 환경 로드
         self.init_gazebo()
 
         # # ROS 퍼블리셔 및 서브스크라이버 설정
         self.init_ros()
 
+        self.init_global_guide()
 
     def init_gazebo(self):
         os.environ["JACKAL_LASER"] = "1"
@@ -82,41 +91,44 @@ class GazeboEnv:
             f'gui:={"true" if self.gui else "false"}'
         ])
         time.sleep(5)  # Gazebo 로딩 대기
-        print("g0")
 
         rospy.init_node('gym', anonymous=True) #, log_level=rospy.FATAL)
         rospy.set_param('/use_sim_time', True)
     
-        print("g1")
         self.gazebo_sim = GazeboSimulation(init_position=self.init_position)
-        print("g2")
         # 초기 위치 확인 및 리셋
         init_coor = (self.init_position[0], self.init_position[1])
         goal_coor = (self.init_position[0] + self.goal_position[0], self.init_position[1] + self.goal_position[1])
-        print("g3")
-        """
-        
-        ToDO : Gazebo Error
-        
-        """
+
         pos = self.gazebo_sim.get_model_state().pose.position
-        print("g4")
         curr_coor = (pos.x, pos.y)
         collided = True
-        print("g5")
         while compute_distance(init_coor, curr_coor) > 0.1 or collided:
             self.gazebo_sim.reset()
             pos = self.gazebo_sim.get_model_state().pose.position
             curr_coor = (pos.x, pos.y)
             collided = self.gazebo_sim.get_hard_collision()
             time.sleep(1)
-        print("g6")
 
     def init_ros(self):
         self.vel_pub = rospy.Publisher("jackal_velocity_controller/cmd_vel", Twist, queue_size=1)
         self.odom = rospy.Subscriber("/jackal_velocity_controller/odom", Odometry, self.odom_callback, queue_size=1)
-        self.costmap = rospy.Subscriber("/move_base/local_costmap/costmap", OccupancyGrid, self.costmap_callback, queue_size=1)
+        #self.costmap = rospy.Subscriber("/move_base/local_costmap/costmap", OccupancyGrid, self.costmap_callback, queue_size=1)
         self.sensor = rospy.Subscriber("/front/scan", LaserScan, self.lidar_callback, queue_size=1)
+        self.sensor = rospy.Subscriber("/front/scan", LaserScan, self.lidar_callback, queue_size=1)
+
+    def init_global_guide(self):
+         # ROS 패키지 경로 설정
+        rospack = rospkg.RosPack()
+        base_path = rospack.get_path('leebots_local_planner')
+
+        launch_file = os.path.join(base_path, 'launch', 'move_base_global.launch')
+
+        # Global path 실행
+        self.globalpath_process = subprocess.Popen([
+            'roslaunch',
+            launch_file
+        ])
 
     def odom_callback(self, od_data):
         self.last_odom = od_data
@@ -124,11 +136,23 @@ class GazeboEnv:
     def lidar_callback(self, msg):
         self.sensor_data = np.ones(self.environment_dim) * 10
         pc2_msg = self.lp.projectLaser(msg)
-        self.sensor_data = np.array(pc2.read_points_list(pc2_msg))
+        #self.sensor_data = np.array(pc2.read_points_list(pc2_msg))
+        lidar_data = pc2.read_points_list(pc2_msg, skip_nans=False, field_names=("x", "y", "z"))
+        for i in range(len(lidar_data)):
+            if lidar_data[i][2] > -0.2:
+                dot = lidar_data[i][0] * 1 + lidar_data[i][1] * 0
+                mag1 = math.sqrt(math.pow(lidar_data[i][0], 2) + math.pow(lidar_data[i][1], 2))
+                mag2 = math.sqrt(math.pow(1, 2) + math.pow(0, 2))
+                beta = math.acos(dot / (mag1 * mag2)) * np.sign(lidar_data[i][1])
+                dist = math.sqrt(lidar_data[i][0] ** 2 + lidar_data[i][1] ** 2 + lidar_data[i][2] ** 2)
+
+                for j in range(len(self.gaps)):
+                    if self.gaps[j][0] <= beta < self.gaps[j][1]:
+                        self.sensor_data[j] = min(self.sensor_data[j], dist)
+                        break
 
     def costmap_callback(self, msg):
-        rospy.loginfo("Received Costmap data!")
-
+        #rospy.loginfo("Received Costmap data!")
         # Costmap 데이터를 numpy 배열로 변환
         self.costmap_data = np.array(msg.data).reshape(msg.info.height, msg.info.width)
         self.costmap_resolution = msg.info.resolution
@@ -147,7 +171,8 @@ class GazeboEnv:
         # Publish the robot action
         vel_cmd = Twist()
         vel_cmd.linear.x = action[0]
-        vel_cmd.angular.z = action[1]
+        vel_cmd.linear.y = action[1]
+        vel_cmd.angular.z = action[2]
         self.vel_pub.publish(vel_cmd) #publish vel_cmd
 
         self.gazebo_sim.unpause()
@@ -179,7 +204,7 @@ class GazeboEnv:
             target = True
             done = True
 
-        robot_state = [distance, action[0], action[1]]
+        robot_state = [distance, action[0], action[1], action[2]]
         state = np.append(robot_state, lidar_state)
         reward = self.get_reward(target, collision, action)
         return state, reward, done, target
@@ -217,28 +242,36 @@ class GazeboEnv:
         robot_y = self.odom_y  # 현재 y 좌표
 
         # Costmap 정보 가져오기
-        costmap = self.costmap_data
-        costmap_resolution = self.costmap_resolution  # m/cell (해상도)
-        costmap_origin_x = self.costmap_origin_x  # costmap의 원점 x 좌표
-        costmap_origin_y = self.costmap_origin_y  # costmap의 원점 y 좌표
-        costmap_width = self.costmap_width  # costmap의 가로 크기 (셀 단위)
-        costmap_height = self.costmap_height  # costmap의 세로 크기 (셀 단위)
+        #costmap = self.costmap_data
+        #costmap_resolution = self.costmap_resolution  # m/cell (해상도)
+        #costmap_origin_x = self.costmap_origin_x  # costmap의 원점 x 좌표
+        #costmap_origin_y = self.costmap_origin_y  # costmap의 원점 y 좌표
+        #costmap_width = self.costmap_width  # costmap의 가로 크기 (셀 단위)
+        #costmap_height = self.costmap_height  # costmap의 세로 크기 (셀 단위)
 
         # 로봇 위치를 Costmap 좌표계로 변환
-        costmap_x = int((robot_x - costmap_origin_x) / costmap_resolution)
-        costmap_y = int((robot_y - costmap_origin_y) / costmap_resolution)
+        #costmap_x = int((robot_x - costmap_origin_x) / costmap_resolution)
+        #costmap_y = int((robot_y - costmap_origin_y) / costmap_resolution)
 
         # Costmap 범위 안에 있는지 확인
-        if costmap_x < 0 or costmap_x >= costmap_width or costmap_y < 0 or costmap_y >= costmap_height:
-            rospy.logwarn("Robot is out of costmap bounds!")
-            return False, False
+        #if costmap_x < 0 or costmap_x >= costmap_width or costmap_y < 0 or costmap_y >= costmap_height:
+        #    rospy.logwarn("Robot is out of costmap bounds!")
+        #    return False, False
 
         # 로봇이 위치한 grid의 값 확인 (장애물 여부)
-        obstacle_threshold = 50  # 장애물로 간주하는 점유 확률 값 (0~100 중에서)
-        robot_cell_value = costmap[costmap_y, costmap_x]  # costmap은 (y, x) 순서로 접근
+        #obstacle_threshold = 50  # 장애물로 간주하는 점유 확률 값 (0~100 중에서)
+        #robot_cell_value = costmap[costmap_y, costmap_x]  # costmap은 (y, x) 순서로 접근
 
         # 로봇이 장애물 위에 있는 경우 → 충돌로 판단
-        if robot_cell_value >= obstacle_threshold:
+        #if robot_cell_value >= obstacle_threshold:
+        #    rospy.logwarn("Collision detected: Robot is inside an obstacle!")
+        #    return True, True
+
+        #if np.min(self.sensor_data) < 0.2:
+        #    rospy.logwarn("Collision detected: Robot is inside an obstacle!")
+        #    return True, True
+        
+        if self.gazebo_sim.get_hard_collision():
             rospy.logwarn("Collision detected: Robot is inside an obstacle!")
             return True, True
 

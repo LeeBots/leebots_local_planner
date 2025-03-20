@@ -246,22 +246,20 @@ if save_model and not os.path.exists("./pytorch_models"):
 
 # Create the training environment
 environment_dim = 100
-robot_dim = 3
+robot_dim = 4
 
 
 ###
 world_idx = 0 
-print("0")
 env = GazeboEnv(world_idx=world_idx, gui=True, environment_dim=environment_dim)
-print("1")
 ####
 
 time.sleep(5)
 torch.manual_seed(seed)
 np.random.seed(seed)
 state_dim = environment_dim + robot_dim
-action_dim = 2
-max_action = 1
+action_dim = 3
+max_action = 2
 
 # Create the network
 network = TD3(state_dim, action_dim, max_action)
@@ -315,6 +313,7 @@ while timestep < max_timesteps:
             epoch += 1
 
         state = env.reset()
+        print(np.array(state).shape)
         done = False
 
         episode_reward = 0
@@ -325,13 +324,14 @@ while timestep < max_timesteps:
     if expl_noise > expl_min:
         expl_noise = expl_noise - ((1 - expl_min) / expl_decay_steps)
 
+    
     action = network.get_action(np.array(state))
     action = (action + np.random.normal(0, expl_noise, size=action_dim)).clip(
         -max_action, max_action
     )
 
     # Update action to fall in range [-1,1] for linear velocity and [-1,1] for angular velocity
-    a_in = [action[0], action[1]]
+    a_in = [action[0], action[1], action[2]]
     next_state, reward, done, target = env.step(a_in)
     done_bool = 0 if episode_timesteps + 1 == max_ep else int(done)
     done = 1 if episode_timesteps + 1 == max_ep else int(done)
