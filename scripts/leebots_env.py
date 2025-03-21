@@ -41,6 +41,8 @@ class GazeboEnv:
         self.environment_dim = environment_dim
         self.last_odom = None
         self.lp = LaserGeometry.LaserProjection()
+        self.pre_distance = 1000.0
+        self.min_distance = 1000.0
 
         self.gaps = [[-np.pi / 2 - 0.03, -np.pi / 2 + np.pi / self.environment_dim]]
         for m in range(self.environment_dim - 1):
@@ -55,7 +57,8 @@ class GazeboEnv:
         # # ROS 퍼블리셔 및 서브스크라이버 설정
         self.init_ros()
 
-        self.init_global_guide()
+        #self.init_global_guide()
+
 
     def init_gazebo(self):
         os.environ["JACKAL_LASER"] = "1"
@@ -72,6 +75,10 @@ class GazeboEnv:
             self.goal_position = [-20, 0]
         else:
             raise ValueError(f"World index {self.world_idx} does not exist")
+        
+        self.pre_distance =  np.linalg.norm(
+            [self.init_position[0] - self.goal_position[0], self.init_position[1] - self.goal_position[1]]
+        )
 
         print(f"Loading Gazebo Simulation with {self.world_name}")
 
@@ -115,7 +122,7 @@ class GazeboEnv:
         self.odom = rospy.Subscriber("/jackal_velocity_controller/odom", Odometry, self.odom_callback, queue_size=1)
         #self.costmap = rospy.Subscriber("/move_base/local_costmap/costmap", OccupancyGrid, self.costmap_callback, queue_size=1)
         self.sensor = rospy.Subscriber("/front/scan", LaserScan, self.lidar_callback, queue_size=1)
-        self.sensor = rospy.Subscriber("/front/scan", LaserScan, self.lidar_callback, queue_size=1)
+        #self.sensor = rospy.Subscriber("/front/scan", LaserScan, self.lidar_callback, queue_size=1)
 
     def init_global_guide(self):
          # ROS 패키지 경로 설정
@@ -193,10 +200,16 @@ class GazeboEnv:
             self.last_odom.pose.pose.orientation.y,
             self.last_odom.pose.pose.orientation.z,
         )
+        pos = self.gazebo_sim.get_model_state().pose.position
+        print(f"POS X: {pos.x:.2f}, Y: {pos.y:.2f} : ODM X: {self.odom_x:.2f}, Y: {self.odom_y:.2f}")
 
         # Calculate distance to the goal from the robot
         distance = np.linalg.norm(
             [self.odom_x - self.goal_position[0], self.odom_y - self.goal_position[1]]
+        )
+
+        distance = np.linalg.norm(
+            [pos.x - self.goal_position[0], pos.y - self.goal_position[1]]
         )
 
         # Detect if the goal has been reached and give a large positive reward
@@ -206,7 +219,9 @@ class GazeboEnv:
 
         robot_state = [distance, action[0], action[1], action[2]]
         state = np.append(robot_state, lidar_state)
-        reward = self.get_reward(target, collision, action)
+        reward = self.get_reward(target, collision, distance, action)
+        self.pre_distance = distance
+
         return state, reward, done, target
 
     def reset(self):
@@ -267,22 +282,43 @@ class GazeboEnv:
         #    rospy.logwarn("Collision detected: Robot is inside an obstacle!")
         #    return True, True
 
-        #if np.min(self.sensor_data) < 0.2:
-        #    rospy.logwarn("Collision detected: Robot is inside an obstacle!")
-        #    return True, True
+        if np.min(self.sensor_data) < 0.05:
+            rospy.logwarn("Collision detected: Sensor based")
+            self.min_distance = 1000.0
+            return True, True
         
         if self.gazebo_sim.get_hard_collision():
-            rospy.logwarn("Collision detected: Robot is inside an obstacle!")
+            rospy.logwarn("Collision detected: Gazebo based")
+            self.min_distance = 1000.0
             return True, True
 
         # 충돌이 없을 경우
         return False, False
 
-    def get_reward(self, target, collision, action):
+    def get_reward(self, target, collision, distance, action):
+        reward = 0.0
+
+        print(f"MIN_DIST: {self.min_distance:.2f}, CUR_DIST: {distance:.2f}; {self.min_distance > distance}")
+        if self.min_distance > distance:
+            reward += 10#(self.min_distance - distance)**2
+            self.min_distance = distance
+        else:
+            reward += self.min_distance - distance
+        
+
         if target:
-            return 100.0
+            reward += 100.0
         elif collision:
-            return -100.0
-        else: #have to change 
-            r3 = lambda x: 1 - x if x < 1 else 0.0
-            return action[0] / 2 - abs(action[1]) / 2 
+            reward -= 5.0
+         #have to change 
+        r3 = lambda x: 1 - x if x < 1 else 0.0
+        # translation than rotation
+        if np.min(self.sensor_data) > 0.5:
+            reward += (action[0]**2 + action[1]**2)**0.5 / 2 - abs(action[2]) / 2
+        
+        if action[0] > 0 and action[1] > 0:
+            reward += 5
+
+
+        print(f"REWARD: {reward:.2f}")
+        return reward

@@ -20,7 +20,7 @@ def evaluate(network, epoch, eval_episodes=10):
         done = False
         while not done and count < 501:
             action = network.get_action(np.array(state))
-            a_in = [(action[0] + 1) / 2, action[1]]
+            a_in = [(action[0] + 1) / 2, action[1], action[2]]
             state, reward, done, _ = env.step(a_in)
             avg_reward += reward
             count += 1
@@ -259,7 +259,7 @@ torch.manual_seed(seed)
 np.random.seed(seed)
 state_dim = environment_dim + robot_dim
 action_dim = 3
-max_action = 2
+max_action = 3
 
 # Create the network
 network = TD3(state_dim, action_dim, max_action)

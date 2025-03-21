@@ -1,6 +1,11 @@
 <launch>
   <!-- Start the navigation stack -->
   <!-- The configuration files are loaded from jackal_helper -->
+  <!--node name="costmap_node" pkg="costmap_2d" type="costmap_2d_node" >
+    <rosparam file="$(find jackal_helper)/configs/params/costmap_common_params.yaml" command="load" ns="global_costmap" />
+    <rosparam file="$(find jackal_helper)/configs/params/costmap_common_params.yaml" command="load" ns="local_costmap" />
+  </node-->
+  
   <node pkg="move_base" type="move_base" respawn="false" name="move_base" output="screen">
 
     <rosparam file="$(find jackal_helper)/configs/params/costmap_common_params.yaml" command="load" ns="global_costmap" />
