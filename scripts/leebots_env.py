@@ -201,7 +201,7 @@ class GazeboEnv:
             self.last_odom.pose.pose.orientation.z,
         )
         pos = self.gazebo_sim.get_model_state().pose.position
-        print(f"POS X: {pos.x:.2f}, Y: {pos.y:.2f} : ODM X: {self.odom_x:.2f}, Y: {self.odom_y:.2f}")
+        #print(f"POS X: {pos.x:.2f}, Y: {pos.y:.2f} : ODM X: {self.odom_x:.2f}, Y: {self.odom_y:.2f}")
 
         # Calculate distance to the goal from the robot
         distance = np.linalg.norm(
@@ -298,7 +298,7 @@ class GazeboEnv:
     def get_reward(self, target, collision, distance, action):
         reward = 0.0
 
-        print(f"MIN_DIST: {self.min_distance:.2f}, CUR_DIST: {distance:.2f}; {self.min_distance > distance}")
+        #print(f"MIN_DIST: {self.min_distance:.2f}, CUR_DIST: {distance:.2f}; {self.min_distance > distance}")
         if self.min_distance > distance:
             reward += 10#(self.min_distance - distance)**2
             self.min_distance = distance
@@ -320,5 +320,5 @@ class GazeboEnv:
             reward += 5
 
 
-        print(f"REWARD: {reward:.2f}")
+        #print(f"REWARD: {reward:.2f}")
         return reward

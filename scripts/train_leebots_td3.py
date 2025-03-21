@@ -313,7 +313,7 @@ while timestep < max_timesteps:
             epoch += 1
 
         state = env.reset()
-        print(np.array(state).shape)
+        #print(np.array(state).shape)
         done = False
 
         episode_reward = 0
