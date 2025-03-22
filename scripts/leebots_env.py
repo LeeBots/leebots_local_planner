@@ -15,7 +15,7 @@ from sensor_msgs.msg import PointCloud2
 from nav_msgs.msg import Odometry
 from nav_msgs.msg import OccupancyGrid  
 from sensor_msgs.msg import LaserScan 
-from geometry_msgs.msg import Twist, Quaternion, Vector3
+from geometry_msgs.msg import Twist, Quaternion, Vector3, TransformStamped
 from move_base_msgs.msg import MoveBaseGoal, MoveBaseAction
 from map_msgs.msg import OccupancyGridUpdate
 import actionlib
@@ -65,6 +65,8 @@ class GazeboEnv:
         # # ROS 퍼블리셔 및 서브스크라이버 설정
         self.init_ros()
 
+        #self.publish_odom_tf()
+
         self.init_global_guide()
 
         # self.initial_costmap_saved = False
@@ -83,8 +85,6 @@ class GazeboEnv:
 
         self.nav_as.wait_for_server()
         
-
-
 
     def init_gazebo(self):
         os.environ["JACKAL_LASER"] = "1"
@@ -145,24 +145,19 @@ class GazeboEnv:
 
     def init_ros(self):
         self.vel_pub = rospy.Publisher("/jackal_velocity_controller/cmd_vel", Twist, queue_size=1)
-        #self.odom = rospy.Subscriber("/odometry/filtered", Odometry, self.odom_callback, queue_size=1)
         self.odom = rospy.Subscriber("/jackal_velocity_controller/odom", Odometry, self.odom_callback, queue_size=1)
-        #self.costmap = rospy.Subscriber("/move_base/local_costmap/costmap", OccupancyGrid, self.costmap_callback, queue_size=1)
         self.sensor = rospy.Subscriber("/front/scan", LaserScan, self.lidar_callback, queue_size=1)
-        #self.sensor = rospy.Subscriber("/front/scan", LaserScan, self.lidar_callback, queue_size=1)
-        #self.costmap_sub = rospy.Subscriber("/move_base/global_costmap/costmap", OccupancyGrid, self.initial_costmap_callback)
-        #self.costmap_update_sub = rospy.Subscriber("/move_base/global_costmap/costmap_updates", OccupancyGridUpdate, self.costmap_update_callback)
         self.global_plan_sub = rospy.Subscriber("/move_base/NavfnROS/plan", Path, self.global_plan_callback, queue_size=10)
-        self.set_state = rospy.Publisher(
-            "gazebo/set_model_state", ModelState, queue_size=10
-        )
+        self.set_state = rospy.Publisher("gazebo/set_model_state", ModelState, queue_size=10)
+        self.odom_pub = rospy.Publisher("fake/odom", Odometry, queue_size=10)
+        self.odom_broadcaster = tf.TransformBroadcaster()
 
     def init_global_guide(self):
          # ROS 패키지 경로 설정
         rospack = rospkg.RosPack()
         base_path = rospack.get_path('leebots_local_planner')
 
-        launch_file = os.path.join(base_path, 'launch', 'move_base_leebots.launch')
+        launch_file = os.path.join(base_path, 'launch', 'move_base_DWA.launch')
 
         # Global path 실행
         self.globalpath_process = subprocess.Popen([
@@ -291,6 +286,49 @@ class GazeboEnv:
     #     return world_plan
     
     # Perform an action and read a new state
+        
+    def publish_odom_tf(self):
+        current_time = rospy.get_rostime()
+        pos = self.gazebo_sim.get_model_state().pose.position
+        orientation = self.gazebo_sim.get_model_state().pose.orientation
+        twist_l = self.gazebo_sim.get_model_state().twist.linear
+        twist_a = self.gazebo_sim.get_model_state().twist.angular
+
+        odom_trans = TransformStamped()
+        odom_trans.header.stamp = current_time
+        odom_trans.header.frame_id = "odom"
+        odom_trans.child_frame_id = "base_link"
+
+        odom_trans.transform.translation.x = pos.x
+        odom_trans.transform.translation.y = pos.y
+        odom_trans.transform.translation.z = pos.z
+        odom_trans.transform.rotation.x = orientation.x
+        odom_trans.transform.rotation.y = orientation.y
+        odom_trans.transform.rotation.z = orientation.z
+        odom_trans.transform.rotation.w = orientation.w
+
+        self.odom_broadcaster.sendTransform((pos.x,pos.y,pos.z), (orientation.x, orientation.y, orientation.z, orientation.w), current_time, "base_link", "odom")
+        
+        cur_odom = Odometry()
+        cur_odom.header.frame_id = "odom"
+        cur_odom.header.stamp = current_time
+
+        cur_odom.pose.pose.position.x = pos.x
+        cur_odom.pose.pose.position.y = pos.y
+        cur_odom.pose.pose.position.z = pos.z
+        cur_odom.pose.pose.orientation.x = orientation.x
+        cur_odom.pose.pose.orientation.y = orientation.y
+        cur_odom.pose.pose.orientation.z = orientation.z
+        cur_odom.pose.pose.orientation.w = orientation.w
+
+        cur_odom.child_frame_id = "base_link"
+        cur_odom.twist.twist.linear.x = twist_l.x
+        cur_odom.twist.twist.linear.x = twist_l.y
+        cur_odom.twist.twist.angular.z = twist_a.z
+
+        self.odom_pub.publish(cur_odom)
+
+        
     def step(self, action):
         self.nav_as.send_goal(self.mb_goal)
         target = False
@@ -301,6 +339,8 @@ class GazeboEnv:
         vel_cmd.linear.y = action[1]
         vel_cmd.angular.z = action[2]
         self.vel_pub.publish(vel_cmd) #publish vel_cmd
+
+        self.publish_odom_tf()
 
         self.gazebo_sim.unpause()
         time.sleep(TIME_DELTA)  # 액션이 적용될 시간 동안 대기
@@ -314,26 +354,17 @@ class GazeboEnv:
         # Calculate robot heading from odometry data
         self.odom_x = self.last_odom.pose.pose.position.x
         self.odom_y = self.last_odom.pose.pose.position.y
-        # quaternion = Quaternion(
-        #     self.last_odom.pose.pose.orientation.w,
-        #     self.last_odom.pose.pose.orientation.x,
-        #     self.last_odom.pose.pose.orientation.y,
-        #     self.last_odom.pose.pose.orientation.z,
-        # )
-        pos = self.gazebo_sim.get_model_state().pose.position
-        print(f"POS X: {pos.x:.2f}, Y: {pos.y:.2f} : ODM X: {self.odom_x:.2f}, Y: {self.odom_y:.2f}")
 
-        # Calculate distance to the goal from the robot
-        #distance = np.linalg.norm(
-        #    [self.odom_x - self.goal_position[0], self.odom_y - self.goal_position[1]]
-        #)
+        pos = self.gazebo_sim.get_model_state().pose.position
+        orientation = self.gazebo_sim.get_model_state().pose.orientation
+        
+        print(f"POS X: {pos.x:.2f}, Y: {pos.y:.2f} : ODM X: {self.odom_x:.2f}, Y: {self.odom_y:.2f}")
 
         distance = np.linalg.norm(
             [pos.x - self.goal_position[0], pos.y - self.goal_position[1]]
         )
 
         # Calculate the relative angle between the robots heading and heading toward the goal
-        orientation = self.gazebo_sim.get_model_state().pose.orientation
         quaternion = (
             orientation.x, orientation.y, orientation.z, orientation.w
         )
