@@ -248,6 +248,8 @@ if save_model and not os.path.exists("./pytorch_models"):
 environment_dim = 100
 robot_dim = 5
 
+total_episodes = 360
+
 
 ###
 world_idx = 0 

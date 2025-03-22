@@ -57,6 +57,8 @@ class GazeboEnv:
             )
         self.gaps[-1][-1] += 0.03
 
+        self.reset_counter = 0
+
         # Gazebo 환경 로드
         self.init_gazebo()
 
@@ -120,8 +122,9 @@ class GazeboEnv:
         ])
         time.sleep(5)  # Gazebo 로딩 대기
 
-        rospy.init_node('gym', anonymous=True) #, log_level=rospy.FATAL)
-        rospy.set_param('/use_sim_time', True)
+        if not rospy.core.is_initialized():
+            rospy.init_node('gym', anonymous=True)
+            rospy.set_param('/use_sim_time', True)
     
         self.gazebo_sim = GazeboSimulation(init_position=self.init_position)
         # 초기 위치 확인 및 리셋
@@ -139,6 +142,7 @@ class GazeboEnv:
             time.sleep(1)
 
     def init_ros(self):
+
         self.vel_pub = rospy.Publisher("/jackal_velocity_controller/cmd_vel", Twist, queue_size=1)
         #self.odom = rospy.Subscriber("/odometry/filtered", Odometry, self.odom_callback, queue_size=1)
         self.odom = rospy.Subscriber("/jackal_velocity_controller/odom", Odometry, self.odom_callback, queue_size=1)
@@ -370,6 +374,10 @@ class GazeboEnv:
 
         return state, reward, done, target
 
+    def terminate(self):
+        """Gazebo 환경 종료"""
+        self.gazebo_process.terminate()
+
     def reset(self):
         self.gazebo_sim.reset_init_model_state(self.init_position)
         self.gazebo_sim.reset()  # Gazebo에서 로봇을 해당 위치로 이동
@@ -422,12 +430,34 @@ class GazeboEnv:
 
         robot_state = [distance, theta, 0.0, 0.0, 0.0]
         state = np.append(robot_state, lidar_state)
-        
-        return state
 
-    def terminate(self):
-        """Gazebo 환경 종료"""
-        self.gazebo_process.terminate()
+        self.reset_counter += 1
+
+        if self.reset_counter >= 100:
+            self.terminate()  # 현재 Gazebo 환경 종료
+            self.world_idx += 1  # 다음 world로 변경
+            self.reset_counter = 0
+
+            self.last_odom = None
+            self.lp = LaserGeometry.LaserProjection()
+            self.pre_distance = 1000.0
+            self.min_distance = 1000.0
+            self.global_plan = None
+
+            self.gaps = [[-np.pi / 2 - 0.03, -np.pi / 2 + np.pi / self.environment_dim]]
+            for m in range(self.environment_dim - 1):
+                self.gaps.append(
+                    [self.gaps[m][1], self.gaps[m][1] + np.pi / self.environment_dim]
+                )
+            self.gaps[-1][-1] += 0.03
+
+            self.reset_counter = 0
+
+            self.init_gazebo()  # 새로운 world로 재초기화
+            self.init_ros()
+            self.init_global_guide()
+
+        return state
 
     def observe_collision(self):
         # 현재 로봇 위치 가져오기
