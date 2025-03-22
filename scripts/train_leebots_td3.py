@@ -226,7 +226,7 @@ expl_noise = 1  # Initial exploration noise starting value in range [expl_min ..
 expl_decay_steps = (
     500000  # Number of steps over which the initial exploration noise will decay over
 )
-expl_min = 0.1  # Exploration noise after the decay in range [0...expl_noise]
+expl_min = 0.3  # Exploration noise after the decay in range [0...expl_noise]
 batch_size = 40  # Size of the mini-batch
 discount = 0.99999  # Discount factor to calculate the discounted future reward (should be close to 1)
 tau = 0.005  # Soft target update variable (should be close to 0)
@@ -246,13 +246,13 @@ if save_model and not os.path.exists("./pytorch_models"):
 
 # Create the training environment
 environment_dim = 100
-robot_dim = 4
+robot_dim = 5
 
 
 ###
 world_idx = 0 
 env = GazeboEnv(world_idx=world_idx, gui=True, environment_dim=environment_dim)
-####
+##
 
 time.sleep(5)
 torch.manual_seed(seed)
