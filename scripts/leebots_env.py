@@ -4,7 +4,6 @@ import math
 import numpy as np
 import subprocess
 import rospy
-import argparse
 import rospkg
 
 from visualization_msgs.msg import Marker
@@ -18,7 +17,6 @@ from sensor_msgs.msg import LaserScan
 from geometry_msgs.msg import Twist, Quaternion, Vector3
 from move_base_msgs.msg import MoveBaseGoal, MoveBaseAction
 from map_msgs.msg import OccupancyGridUpdate
-import actionlib
 from nav_msgs.msg import Path
 import laser_geometry.laser_geometry as LaserGeometry
 import sensor_msgs.point_cloud2 as pc2
@@ -37,12 +35,12 @@ TIME_DELTA = 0.1
 def compute_distance(p1, p2):
     return ((p1[0] - p2[0]) ** 2 + (p1[1] - p2[1]) ** 2) ** 0.5
 
-
 class GazeboEnv:
     def __init__(self, world_idx, gui=True, environment_dim = 100):
         """환경 초기화 및 Gazebo 실행"""
         self.world_idx = world_idx
         self.gui = gui
+
 
         # 초기 변수 설정
         self.environment_dim = environment_dim
@@ -64,9 +62,7 @@ class GazeboEnv:
 
         # # ROS 퍼블리셔 및 서브스크라이버 설정
         self.init_ros()
-
-        self.init_global_guide()
-
+        
         # self.initial_costmap_saved = False
         # self.costmap_file_path = os.path.expanduser("~/barn_ws/jackal_ws/src/global_planner/data/costmap0005.txt")
         # self.costmap_info_path = os.path.expanduser("~/barn_ws/jackal_ws/src/global_planner/data/cminfo0005.txt")
@@ -82,9 +78,8 @@ class GazeboEnv:
         self.mb_goal.target_pose.pose.orientation = Quaternion(0, 0, 0, 1)
 
         self.nav_as.wait_for_server()
-        
 
-
+        self.init_global_guide()
 
     def init_gazebo(self):
         os.environ["JACKAL_LASER"] = "1"
@@ -153,9 +148,7 @@ class GazeboEnv:
         #self.costmap_sub = rospy.Subscriber("/move_base/global_costmap/costmap", OccupancyGrid, self.initial_costmap_callback)
         #self.costmap_update_sub = rospy.Subscriber("/move_base/global_costmap/costmap_updates", OccupancyGridUpdate, self.costmap_update_callback)
         self.global_plan_sub = rospy.Subscriber("/move_base/NavfnROS/plan", Path, self.global_plan_callback, queue_size=10)
-        self.set_state = rospy.Publisher(
-            "gazebo/set_model_state", ModelState, queue_size=10
-        )
+        #self.set_state = rospy.Publisher("gazebo/set_model_state", ModelState, queue_size=10)
 
     def init_global_guide(self):
          # ROS 패키지 경로 설정
@@ -328,6 +321,7 @@ class GazeboEnv:
         #    [self.odom_x - self.goal_position[0], self.odom_y - self.goal_position[1]]
         #)
 
+
         distance = np.linalg.norm(
             [pos.x - self.goal_position[0], pos.y - self.goal_position[1]]
         )
@@ -422,8 +416,6 @@ class GazeboEnv:
             theta = -np.pi - theta
             theta = np.pi - theta
 
-
-
         l_state = []
         l_state = self.sensor_data[:]
         lidar_state = [l_state]
@@ -483,33 +475,28 @@ class GazeboEnv:
 
     def get_reward(self, target, collision, distance, action, global_plan):
         reward = 0.0
-        min_dist_to_path = None
+        #min_dist_to_path = None
         # --- robot position ---
         pos = self.gazebo_sim.get_model_state().pose.position
         robot_pos = np.array([pos.x, pos.y])
 
         rospy.loginfo(f"[Robot Position] x: {pos.x:.2f}, y: {pos.y:.2f}")
 
-        # --- global plan exists ---
-        if global_plan is not None and len(global_plan) > 0:
-            if global_plan.ndim == 1:
-                global_plan = global_plan.reshape(-1, 2)
+        # # --- global plan exists ---
+        # if global_plan is not None and len(global_plan) > 0:
+        #     if global_plan.ndim == 1:
+        #         global_plan = global_plan.reshape(-1, 2)
 
-            # 가장 가까운 점 인덱스
-            dists = np.linalg.norm(global_plan - robot_pos, axis=1)
-            closest_idx = np.argmin(dists)
+        # 가장 가까운 점 인덱스
+        dists = np.linalg.norm(global_plan - robot_pos, axis=1)
+        closest_idx = np.argmin(dists)
 
-            # 남은 경로 길이 계산
-            remaining_plan = global_plan[closest_idx:]
-            if len(remaining_plan) >= 1:
-                diffs = np.diff(remaining_plan, axis=0)
-                segment_lengths = np.linalg.norm(diffs, axis=1)
-                distance_to_goal = np.sum(segment_lengths)
-            else:
-                distance_to_goal = 0.0
-        else:
-            # using euclidian distance
-            distance_to_goal = np.linalg.norm([pos.x - self.goal_position[0], pos.y - self.goal_position[1]])
+        # 남은 경로 길이 계산
+        remaining_plan = global_plan[closest_idx:]
+        distance_to_goal = len(remaining_plan)
+        # else:
+        #     # using euclidian distance
+        #     distance_to_goal = np.linalg.norm([pos.x - self.goal_position[0], pos.y - self.goal_position[1]])
 
         # --- reward shaping ---
         if self.min_distance > distance_to_goal:
