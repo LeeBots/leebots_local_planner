@@ -250,7 +250,7 @@ robot_dim = 5
 
 
 ###
-world_idx = 0 
+world_idx = 150
 env = GazeboEnv(world_idx=world_idx, gui=True, environment_dim=environment_dim)
 ##
 
@@ -315,10 +315,22 @@ while timestep < max_timesteps:
         state = env.reset()
         #print(np.array(state).shape)
         done = False
-
         episode_reward = 0
         episode_timesteps = 0
         episode_num += 1
+        print(f"Episode {episode_num} reward: {episode_reward}")
+
+        # if episode_num % 20 == 19:
+        #     env.terminate()
+        #     os.system("killall -9 roslaunch rosmaster roscore rosout gzclient gzserver")
+        #     os.system("pkill -f fake_odom_publisher.py")
+        #     time.sleep(10)
+        #     world_idx = (world_idx + 1) % 360
+
+        #     os.system("python fake_odom_publisher.py &")
+        #     env = GazeboEnv(world_idx=world_idx, gui=True, environment_dim=environment_dim)
+
+        #     time.sleep(5)
 
     # add some exploration noise
     if expl_noise > expl_min:
@@ -336,7 +348,7 @@ while timestep < max_timesteps:
     done_bool = 0 if episode_timesteps + 1 == max_ep else int(done)
     done = 1 if episode_timesteps + 1 == max_ep else int(done)
     episode_reward += reward
-
+    print(f"Episode {episode_num} reward: {episode_reward}")
     # Save the tuple in replay buffer
     replay_buffer.add(state, action, reward, done_bool, next_state)
 
@@ -351,5 +363,3 @@ evaluations.append(evaluate(network=network, epoch=epoch, eval_episodes=eval_ep)
 if save_model:
     network.save("%s" % file_name, directory="./models")
 np.save("./results/%s" % file_name, evaluations)
-
-env.terminate()
