@@ -250,7 +250,7 @@ robot_dim = 5
 
 
 ###
-world_idx = 150
+world_idx = 182
 env = GazeboEnv(world_idx=world_idx, gui=True, environment_dim=environment_dim)
 ##
 
