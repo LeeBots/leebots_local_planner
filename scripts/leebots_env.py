@@ -78,8 +78,8 @@ class GazeboEnv:
         self.nav_as = actionlib.SimpleActionClient('/move_base', MoveBaseAction)
         self.mb_goal = MoveBaseGoal()
         self.mb_goal.target_pose.header.frame_id = 'odom'
-        self.mb_goal.target_pose.pose.position.x = self.goal_position[0]
-        self.mb_goal.target_pose.pose.position.y = self.goal_position[1]
+        self.mb_goal.target_pose.pose.position.x = self.goal_position[0] + self.init_position[0]
+        self.mb_goal.target_pose.pose.position.y = self.goal_position[1] + self.init_position[1]
         self.mb_goal.target_pose.pose.position.z = 0
         self.mb_goal.target_pose.pose.orientation = Quaternion(0, 0, 0, 1)
 
