@@ -502,12 +502,12 @@ class GazeboEnv:
         if np.min(self.sensor_data) < 0.05:
             rospy.logwarn("Collision detected: Sensor based")
             self.min_distance = 1000.0
-            return False, True
+            return True, True
         
         if self.gazebo_sim.get_hard_collision():
             rospy.logwarn("Collision detected: Gazebo based")
             self.min_distance = 1000.0
-            return False, True
+            return True, True
 
         # 충돌이 없을 경우
         return False, False
