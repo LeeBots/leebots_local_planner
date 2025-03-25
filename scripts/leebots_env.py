@@ -24,6 +24,7 @@ import laser_geometry.laser_geometry as LaserGeometry
 import sensor_msgs.point_cloud2 as pc2
 from nav_msgs.srv import GetPlan
 from geometry_msgs.msg import PoseStamped
+from std_msgs.msg import Header
 
 from std_srvs.srv import Empty
 from os.path import join
@@ -55,6 +56,7 @@ class GazeboEnv:
         self.global_plan = None
         self.timestep = 0
         self.last_distance = None
+        self.last_path_idx = None
 
         self.gaps = [[-np.pi / 2 - 0.03, -np.pi / 2 + np.pi / self.environment_dim]]
         for m in range(self.environment_dim - 1):
@@ -71,20 +73,6 @@ class GazeboEnv:
 
 
         self.init_global_guide()
-
-        # import actionlib
-        # from geometry_msgs.msg import Quaternion
-        # from move_base_msgs.msg import MoveBaseGoal, MoveBaseAction
-        # self.nav_as = actionlib.SimpleActionClient('/move_base', MoveBaseAction)
-        # self.mb_goal = MoveBaseGoal()
-        # self.mb_goal.target_pose.header.frame_id = 'odom'
-        # self.mb_goal.target_pose.pose.position.x = self.goal_position[0] + self.init_position[0]
-        # self.mb_goal.target_pose.pose.position.y = self.goal_position[1] + self.init_position[1]
-        # self.mb_goal.target_pose.pose.position.z = 0
-        # self.mb_goal.target_pose.pose.orientation = Quaternion(0, 0, 0, 1)
-
-        # self.nav_as.wait_for_server()
-        
 
     def init_gazebo(self):
         os.environ["JACKAL_LASER"] = "1"
@@ -150,6 +138,7 @@ class GazeboEnv:
         self.set_state = rospy.Publisher("gazebo/set_model_state", ModelState, queue_size=10)
         self.odom_pub = rospy.Publisher("fake/odom", Odometry, queue_size=10)
         self.odom_broadcaster = tf.TransformBroadcaster()
+        self.plan_pub = rospy.Publisher("/td3_global_plan", Path, queue_size=10)
 
     def init_global_guide(self):
          # ROS 패키지 경로 설정
@@ -230,6 +219,29 @@ class GazeboEnv:
             rospy.logerr("Service call failed: %s" % e)
             return None    
 
+
+    def publish_global_plan(self, plan_array):
+        """
+        plan_array: np.array of shape (N, 2) representing x, y path points
+        """
+        if plan_array is None or len(plan_array) == 0:
+            return
+
+        path_msg = Path()
+        path_msg.header = Header()
+        path_msg.header.stamp = rospy.Time.now()
+        path_msg.header.frame_id = "odom"
+
+        for pt in plan_array:
+            pose = PoseStamped()
+            pose.header = path_msg.header
+            pose.pose.position.x = pt[0]
+            pose.pose.position.y = pt[1]
+            pose.pose.orientation.w = 1.0  # 방향 설정 없음
+            path_msg.poses.append(pose)
+
+        self.plan_pub.publish(path_msg)
+
     def publish_odom_tf(self):
         current_time = rospy.get_rostime()
         pos = self.gazebo_sim.get_model_state().pose.position
@@ -279,6 +291,7 @@ class GazeboEnv:
             start = [self.init_position[0], self.init_position[1]]
             goal = [self.init_position[0] + self.goal_position[0], self.init_position[1] + self.goal_position[1]]
             self.global_plan = self.get_global_plan(start, goal)
+            self.publish_global_plan(self.global_plan)
 
         # Publish the robot action
         vel_cmd = Twist()
@@ -356,8 +369,6 @@ class GazeboEnv:
         self.gazebo_sim.reset_init_model_state(self.init_position)
         self.gazebo_sim.reset()  # Gazebo에서 로봇을 해당 위치로 이동
 
-        model_state = self.gazebo_sim.get_model_state()
-
         self.gazebo_sim.unpause()
         time.sleep(TIME_DELTA)
         self.gazebo_sim.pause()
@@ -404,6 +415,7 @@ class GazeboEnv:
         state = np.append(robot_state, lidar_state)
         self.timestep = 0
         self.last_distance = None
+        self.last_path_idx = None
         
         return state
 
@@ -428,14 +440,65 @@ class GazeboEnv:
 
     def get_reward(self, target, collision, distance, action, global_plan):
         reward = 0.0
-        min_dist_to_path = None
+        r1 = 1.0
+        r2 = 100.0
+        r3 = 5.0
+        curr_idx = None
+        
         # --- robot position ---
         pos = self.gazebo_sim.get_model_state().pose.position
         robot_pos = np.array([pos.x, pos.y])
 
         rospy.loginfo(f"[Robot Position] x: {pos.x:.2f}, y: {pos.y:.2f}")
 
-        # --- global plan exists ---
+
+        # --- 1. goal reach ---
+
+        if target: # reach goal
+            reward += 100.0
+
+        # --- 2. collision detect ---
+
+        if collision:
+            rospy.loginfo("Collision!")
+            return -r1 - r2
+
+        # --- 3. following global plan --- 
+        on_path = False
+        dist_threshold = 0.05 
+
+        if global_plan is not None and len(global_plan) > 0:
+            dists = np.linalg.norm(global_plan - robot_pos, axis=1)
+            min_dist = np.min(dists)
+            curr_idx = int(np.argmin(dists))
+            if min_dist < dist_threshold:
+                on_path = True
+
+        # --- path 상태에 따른 reward ---
+        if on_path:
+            if hasattr(self, "left_path") and self.left_path:
+                # 복귀했을 때 last index에서 얼마나 이동했는지
+                if hasattr(self, "last_path_idx") and self.last_path_idx is not None:
+                    Ne = self.last_path_idx - curr_idx  # index 차이
+                    reward += -r1 + Ne * r3
+                    rospy.loginfo(f"[REJOIN PATH] From idx {self.last_path_idx} → {curr_idx}, Ne={Ne}, reward += {-r1 + Ne * r3}")
+                else:
+                    reward += r1  # fallback
+                self.left_path = False
+            else:
+                reward += r1  # 정상적으로 path 위에 있음
+            self.last_path_idx = curr_idx
+        else:
+            reward += -r1
+            if not hasattr(self, "left_path") or not self.left_path:
+                self.left_path = True
+                self.last_path_idx = curr_idx  # path 벗어나기 전 index 저장
+
+        # --- time penalty ---   
+        reward -= self.timestep
+
+
+        # --- global plan length reward ---
         if global_plan is not None and len(global_plan) > 0:
             if global_plan.ndim == 1:
                 global_plan = global_plan.reshape(-1, 2)
@@ -455,32 +518,31 @@ class GazeboEnv:
             self.last_distance = distance_to_goal
 
         if self.last_distance > distance_to_goal:
-            reward += (self.last_distance - distance_to_goal) * 3
+            reward += (self.last_distance - distance_to_goal) * 1000
             rospy.loginfo(f"[Reward] LastDist: {self.last_distance:.2f} , CurrDistance {distance_to_goal:.2f}")
             
         else:
             if self.last_distance - distance_to_goal == 0:
                 reward -= distance_to_goal 
             else:
-                reward += (self.last_distance - distance_to_goal) * 2
+                reward += (self.last_distance - distance_to_goal) * 1000
             rospy.loginfo(f"[Reward] LastDist: {self.last_distance:.2f} , CurrDistance {distance_to_goal:.2f}")
 
         self.last_distance = distance_to_goal
 
         # distance to goal 
-        reward -= distance
-        rospy.loginfo(f"distance to goal : {distance}")
+        alpha = 500.0    # 최대 보상/페널티 크기
+        k = 10.0         # 전환의 급격함 (k값이 클수록 전환이 더 급격해짐)
+        threshold = 2.5  # 전환 임계 거리
 
-        if target: # reach goal
-            reward += 100.0
-        elif collision: # collision 
-            reward -= 100.0
+        # tanh 함수: threshold 보다 크면 음수, 작으면 양수가 나오도록 함.
+        reward += alpha * np.tanh(k * (threshold - distance))
+        rospy.loginfo(f"distance to goal : {distance}")
 
         # translation than rotation
         if np.min(self.sensor_data) > 0.5:
             reward += (action[0]**2 + action[1]**2)**0.5 / 2 - abs(action[2]) / 2
         
-        # time 
-        reward -= self.timestep
+
 
         return reward

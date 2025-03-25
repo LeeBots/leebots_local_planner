@@ -218,7 +218,7 @@ class TD3(object):
 # Set the parameters for the implementation
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")  # cuda or cpu
 seed = 0  # Random seed number
-eval_freq = 5e3  # After how many steps to perform the evaluation
+eval_freq = 2e3  # After how many steps to perform the evaluation
 max_ep = 500  # maximum number of steps per episode
 eval_ep = 10  # number of episodes for evaluation
 max_timesteps = 5e6  # Maximum number of steps to perform
@@ -315,22 +315,12 @@ while timestep < max_timesteps:
         state = env.reset()
         #print(np.array(state).shape)
         done = False
+
         episode_reward = 0
         episode_timesteps = 0
         episode_num += 1
         print(f"Episode {episode_num} reward: {episode_reward}")
 
-        # if episode_num % 20 == 19:
-        #     env.terminate()
-        #     os.system("killall -9 roslaunch rosmaster roscore rosout gzclient gzserver")
-        #     os.system("pkill -f fake_odom_publisher.py")
-        #     time.sleep(10)
-        #     world_idx = (world_idx + 1) % 360
-
-        #     os.system("python fake_odom_publisher.py &")
-        #     env = GazeboEnv(world_idx=world_idx, gui=True, environment_dim=environment_dim)
-
-        #     time.sleep(5)
 
     # add some exploration noise
     if expl_noise > expl_min:
@@ -363,3 +353,6 @@ evaluations.append(evaluate(network=network, epoch=epoch, eval_episodes=eval_ep)
 if save_model:
     network.save("%s" % file_name, directory="./models")
 np.save("./results/%s" % file_name, evaluations)
+
+
+env.terminate()
