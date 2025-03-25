@@ -56,6 +56,7 @@ class GazeboEnv:
         self.global_plan = None
         self.timestep = 0
         self.last_distance = None
+        self.left_path = False
         self.last_path_idx = None
 
         self.gaps = [[-np.pi / 2 - 0.03, -np.pi / 2 + np.pi / self.environment_dim]]
@@ -415,6 +416,7 @@ class GazeboEnv:
         state = np.append(robot_state, lidar_state)
         self.timestep = 0
         self.last_distance = None
+        self.left_path = False
         self.last_path_idx = None
         
         return state
@@ -482,14 +484,14 @@ class GazeboEnv:
                     Ne = self.last_path_idx - curr_idx  # index 차이
                     reward += -r1 + Ne * r3
                     rospy.loginfo(f"[REJOIN PATH] From idx {self.last_path_idx} → {curr_idx}, Ne={Ne}, reward += {-r1 + Ne * r3}")
-                else:
-                    reward += r1  # fallback
+                else: 
+                    reward += 0 # fallback
                 self.left_path = False
-            else:
+            else:# 원래부터 path 위에 있었던 경우
                 reward += r1  # 정상적으로 path 위에 있음
             self.last_path_idx = curr_idx
         else:
-            reward += -r1
+            reward += r1
             if not hasattr(self, "left_path") or not self.left_path:
                 self.left_path = True
                 self.last_path_idx = curr_idx  # path 벗어나기 전 index 저장
@@ -518,30 +520,30 @@ class GazeboEnv:
             self.last_distance = distance_to_goal
 
         if self.last_distance > distance_to_goal:
-            reward += (self.last_distance - distance_to_goal) * 1000
+            reward += (self.last_distance - distance_to_goal) * 100
             rospy.loginfo(f"[Reward] LastDist: {self.last_distance:.2f} , CurrDistance {distance_to_goal:.2f}")
             
         else:
             if self.last_distance - distance_to_goal == 0:
-                reward -= distance_to_goal 
+                reward -= distance_to_goal * 0.01
             else:
-                reward += (self.last_distance - distance_to_goal) * 1000
+                reward += (self.last_distance - distance_to_goal) * 100
             rospy.loginfo(f"[Reward] LastDist: {self.last_distance:.2f} , CurrDistance {distance_to_goal:.2f}")
 
         self.last_distance = distance_to_goal
 
-        # distance to goal 
-        alpha = 500.0    # 최대 보상/페널티 크기
-        k = 10.0         # 전환의 급격함 (k값이 클수록 전환이 더 급격해짐)
-        threshold = 2.5  # 전환 임계 거리
+        # # distance to goal 
+        # alpha = 10   # 최대 보상/페널티 크기
+        # k = 10.0         # 전환의 급격함 (k값이 클수록 전환이 더 급격해짐)
+        # threshold = 2.5  # 전환 임계 거리
 
-        # tanh 함수: threshold 보다 크면 음수, 작으면 양수가 나오도록 함.
-        reward += alpha * np.tanh(k * (threshold - distance))
-        rospy.loginfo(f"distance to goal : {distance}")
+        # # tanh 함수: threshold 보다 크면 음수, 작으면 양수가 나오도록 함.
+        # reward += alpha * np.tanh(k * (threshold - distance))
+        # rospy.loginfo(f"distance to goal : {distance}")
 
-        # translation than rotation
-        if np.min(self.sensor_data) > 0.5:
-            reward += (action[0]**2 + action[1]**2)**0.5 / 2 - abs(action[2]) / 2
+        # # translation than rotation
+        # if np.min(self.sensor_data) > 0.5:
+        #     reward += (action[0]**2 + action[1]**2)**0.5 / 2 - abs(action[2]) / 2
         
 
 
