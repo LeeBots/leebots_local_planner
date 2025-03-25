@@ -1,5 +1,10 @@
 <launch>
   <!-- Start the navigation stack -->
+  
+  <arg name="cmd_vel_topic" default="cmd_vel" />
+  <arg name="odom_topic" default="fake/odom" />
+  <arg name="move_forward_only" default="false"/>  
+  
   <!-- The configuration files are loaded from jackal_helper -->
   <node pkg="move_base" type="move_base" respawn="false" name="move_base" output="screen">
 
@@ -14,7 +19,10 @@
 
     <param name="base_global_planner" type="string" value="navfn/NavfnROS" />
     <param name="base_local_planner" value="base_local_planner/TrajectoryPlannerROS"/>
+    
+    <remap from="cmd_vel" to="$(arg cmd_vel_topic)"/>
+    <remap from="odom" to="fake/odom"/>
 
-    <remap from="odom" to="odometry/filtered" />
+    <!--remap from="odom" to="odometry/filtered" /-->
   </node>
 </launch>
