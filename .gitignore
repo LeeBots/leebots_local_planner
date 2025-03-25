@@ -1,1 +1,4 @@
 scripts/runs/*
+scripts/__pycache__/*
+scripts/pytorch_models/*
+scripts/results/

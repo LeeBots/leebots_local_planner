@@ -1,9 +1,12 @@
 import rospy
+import sys
+import numpy as np
 
 import tf2_ros
 from gazebo_simulation import GazeboSimulation
 from geometry_msgs.msg import TransformStamped
 from nav_msgs.msg import Odometry
+from geometry_msgs.msg import Quaternion
 
 def publish_odom_tf(gazebo, odom_broad, odom_pub):
     current_time = rospy.get_rostime()
@@ -54,10 +57,15 @@ if __name__ == '__main__':
     gazebo_sim = GazeboSimulation()
     odom_pub = rospy.Publisher("fake/odom", Odometry, queue_size=10)
     odom_broadcaster = tf2_ros.TransformBroadcaster()
+    
+    # start_pose = [0, 0]
+    # if sys.argv[1] == "dynamic":
+    #     start_pose = [11, 0, 3.14]
+    # else:
+    #     start_pose = [-2.25, 3, 1.57]
     r = rospy.Rate(1)
     while not rospy.is_shutdown():
         publish_odom_tf(gazebo_sim, odom_broadcaster, odom_pub)
-
         r.sleep()
 
         

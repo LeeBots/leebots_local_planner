@@ -78,8 +78,8 @@ class GazeboEnv:
         self.nav_as = actionlib.SimpleActionClient('/move_base', MoveBaseAction)
         self.mb_goal = MoveBaseGoal()
         self.mb_goal.target_pose.header.frame_id = 'odom'
-        self.mb_goal.target_pose.pose.position.x = self.goal_position[0]
-        self.mb_goal.target_pose.pose.position.y = self.goal_position[1]
+        self.mb_goal.target_pose.pose.position.x = self.goal_position[0] + self.init_position[0]
+        self.mb_goal.target_pose.pose.position.y = self.goal_position[1] + self.init_position[1]
         self.mb_goal.target_pose.pose.position.z = 0
         self.mb_goal.target_pose.pose.orientation = Quaternion(0, 0, 0, 1)
 
@@ -514,12 +514,13 @@ class GazeboEnv:
 
     def get_reward(self, target, collision, distance, action, global_plan):
         reward = 0.0
+        reward -= 10
         min_dist_to_path = None
         # --- robot position ---
         pos = self.gazebo_sim.get_model_state().pose.position
         robot_pos = np.array([pos.x, pos.y])
 
-        rospy.loginfo(f"[Robot Position] x: {pos.x:.2f}, y: {pos.y:.2f}")
+        #rospy.loginfo(f"[Robot Position] x: {pos.x:.2f}, y: {pos.y:.2f}")
 
         # --- global plan exists ---
         if global_plan is not None and len(global_plan) > 0:
@@ -569,7 +570,7 @@ class GazeboEnv:
         if target:
             reward += 100.0
         elif collision:
-            reward -= 50.0
+            reward -= 100.0
 
         # translation than rotation
         if np.min(self.sensor_data) > 0.5:
@@ -578,5 +579,5 @@ class GazeboEnv:
         # if action[0] > 0 and action[1] > 0:
         #     reward += 5
             
-        #print(f"REWARD: {reward:.2f}")
+        print(f"REWARD: {reward:.2f}")
         return reward
