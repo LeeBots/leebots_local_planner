@@ -65,8 +65,6 @@ class GazeboEnv:
         # # ROS 퍼블리셔 및 서브스크라이버 설정
         self.init_ros()
 
-        #self.publish_odom_tf()
-
         self.init_global_guide()
 
         # self.initial_costmap_saved = False
@@ -149,8 +147,6 @@ class GazeboEnv:
         self.sensor = rospy.Subscriber("/front/scan", LaserScan, self.lidar_callback, queue_size=1)
         self.global_plan_sub = rospy.Subscriber("/move_base/NavfnROS/plan", Path, self.global_plan_callback, queue_size=10)
         self.set_state = rospy.Publisher("gazebo/set_model_state", ModelState, queue_size=10)
-        self.odom_pub = rospy.Publisher("fake/odom", Odometry, queue_size=10)
-        self.odom_broadcaster = tf.TransformBroadcaster()
 
     def init_global_guide(self):
          # ROS 패키지 경로 설정
@@ -286,48 +282,6 @@ class GazeboEnv:
     #     return world_plan
     
     # Perform an action and read a new state
-        
-    def publish_odom_tf(self):
-        current_time = rospy.get_rostime()
-        pos = self.gazebo_sim.get_model_state().pose.position
-        orientation = self.gazebo_sim.get_model_state().pose.orientation
-        twist_l = self.gazebo_sim.get_model_state().twist.linear
-        twist_a = self.gazebo_sim.get_model_state().twist.angular
-
-        odom_trans = TransformStamped()
-        odom_trans.header.stamp = current_time
-        odom_trans.header.frame_id = "odom"
-        odom_trans.child_frame_id = "base_link"
-
-        odom_trans.transform.translation.x = pos.x
-        odom_trans.transform.translation.y = pos.y
-        odom_trans.transform.translation.z = pos.z
-        odom_trans.transform.rotation.x = orientation.x
-        odom_trans.transform.rotation.y = orientation.y
-        odom_trans.transform.rotation.z = orientation.z
-        odom_trans.transform.rotation.w = orientation.w
-
-        self.odom_broadcaster.sendTransform((pos.x,pos.y,pos.z), (orientation.x, orientation.y, orientation.z, orientation.w), current_time, "base_link", "odom")
-        
-        cur_odom = Odometry()
-        cur_odom.header.frame_id = "odom"
-        cur_odom.header.stamp = current_time
-
-        cur_odom.pose.pose.position.x = pos.x
-        cur_odom.pose.pose.position.y = pos.y
-        cur_odom.pose.pose.position.z = pos.z
-        cur_odom.pose.pose.orientation.x = orientation.x
-        cur_odom.pose.pose.orientation.y = orientation.y
-        cur_odom.pose.pose.orientation.z = orientation.z
-        cur_odom.pose.pose.orientation.w = orientation.w
-
-        cur_odom.child_frame_id = "base_link"
-        cur_odom.twist.twist.linear.x = twist_l.x
-        cur_odom.twist.twist.linear.x = twist_l.y
-        cur_odom.twist.twist.angular.z = twist_a.z
-
-        self.odom_pub.publish(cur_odom)
-
         
     def step(self, action):
         self.nav_as.send_goal(self.mb_goal)
