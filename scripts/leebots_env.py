@@ -69,8 +69,11 @@ class GazeboEnv:
         # Gazebo 환경 로드
         self.init_gazebo()
 
-        # # ROS 퍼블리셔 및 서브스크라이버 설정
+        # set ROS publisher and subscriber
         self.init_ros()
+
+        # publish fake odom
+        self.init_odom_publisher()
 
         self.init_global_guide()
 
@@ -136,6 +139,10 @@ class GazeboEnv:
         self.sensor = rospy.Subscriber("/front/scan", LaserScan, self.lidar_callback, queue_size=1)
         self.global_plan_sub = rospy.Subscriber("/move_base/NavfnROS/plan", Path, self.global_plan_callback, queue_size=10)
         self.set_state = rospy.Publisher("gazebo/set_model_state", ModelState, queue_size=10)
+        self.plan_pub = rospy.Publisher("/td3_global_plan", Path, queue_size=10)
+
+    def init_odom_publisher(self):
+        os.system('python3 fake_odom_publisher.py &')
 
     def init_global_guide(self):
          # ROS 패키지 경로 설정
@@ -238,48 +245,6 @@ class GazeboEnv:
             path_msg.poses.append(pose)
 
         self.plan_pub.publish(path_msg)
-
-    def publish_odom_tf(self):
-        current_time = rospy.get_rostime()
-        pos = self.gazebo_sim.get_model_state().pose.position
-        orientation = self.gazebo_sim.get_model_state().pose.orientation
-        twist_l = self.gazebo_sim.get_model_state().twist.linear
-        twist_a = self.gazebo_sim.get_model_state().twist.angular
-
-        odom_trans = TransformStamped()
-        odom_trans.header.stamp = current_time
-        odom_trans.header.frame_id = "odom"
-        odom_trans.child_frame_id = "base_link"
-
-        odom_trans.transform.translation.x = pos.x
-        odom_trans.transform.translation.y = pos.y
-        odom_trans.transform.translation.z = pos.z
-        odom_trans.transform.rotation.x = orientation.x
-        odom_trans.transform.rotation.y = orientation.y
-        odom_trans.transform.rotation.z = orientation.z
-        odom_trans.transform.rotation.w = orientation.w
-
-        self.odom_broadcaster.sendTransform((pos.x,pos.y,pos.z), (orientation.x, orientation.y, orientation.z, orientation.w), current_time, "base_link", "odom")
-        
-        cur_odom = Odometry()
-        cur_odom.header.frame_id = "odom"
-        cur_odom.header.stamp = current_time
-
-        cur_odom.pose.pose.position.x = pos.x
-        cur_odom.pose.pose.position.y = pos.y
-        cur_odom.pose.pose.position.z = pos.z
-        cur_odom.pose.pose.orientation.x = orientation.x
-        cur_odom.pose.pose.orientation.y = orientation.y
-        cur_odom.pose.pose.orientation.z = orientation.z
-        cur_odom.pose.pose.orientation.w = orientation.w
-
-        cur_odom.child_frame_id = "base_link"
-        cur_odom.twist.twist.linear.x = twist_l.x
-        cur_odom.twist.twist.linear.x = twist_l.y
-        cur_odom.twist.twist.angular.z = twist_a.z
-
-        self.odom_pub.publish(cur_odom)
-
         
     def step(self, action):
         #self.nav_as.send_goal(self.mb_goal)
@@ -297,8 +262,6 @@ class GazeboEnv:
         vel_cmd.angular.z = action[2]
         self.vel_pub.publish(vel_cmd) #publish vel_cmd
 
-        self.publish_odom_tf()
-
         self.gazebo_sim.unpause()
         time.sleep(TIME_DELTA)  # 액션이 적용될 시간 동안 대기
         self.gazebo_sim.pause()
@@ -315,7 +278,7 @@ class GazeboEnv:
         pos = self.gazebo_sim.get_model_state().pose.position
         orientation = self.gazebo_sim.get_model_state().pose.orientation
         
-        print(f"POS X: {pos.x:.2f}, Y: {pos.y:.2f} : ODM X: {self.odom_x:.2f}, Y: {self.odom_y:.2f}")
+        #print(f"POS X: {pos.x:.2f}, Y: {pos.y:.2f} : ODM X: {self.odom_x:.2f}, Y: {self.odom_y:.2f}")
 
         distance = np.linalg.norm(
             [pos.x - self.goal_position[0], pos.y - self.goal_position[1]]
@@ -447,7 +410,7 @@ class GazeboEnv:
         pos = self.gazebo_sim.get_model_state().pose.position
         robot_pos = np.array([pos.x, pos.y])
 
-        rospy.loginfo(f"[Robot Position] x: {pos.x:.2f}, y: {pos.y:.2f}")
+        #rospy.loginfo(f"[Robot Position] x: {pos.x:.2f}, y: {pos.y:.2f}")
 
 
         # --- 1. goal reach ---
@@ -479,7 +442,7 @@ class GazeboEnv:
                 if hasattr(self, "last_path_idx") and self.last_path_idx is not None:
                     Ne = self.last_path_idx - curr_idx  # index 차이
                     reward += -r1 + Ne * r3
-                    rospy.loginfo(f"[REJOIN PATH] From idx {self.last_path_idx} → {curr_idx}, Ne={Ne}, reward += {-r1 + Ne * r3}")
+                    #rospy.loginfo(f"[REJOIN PATH] From idx {self.last_path_idx} → {curr_idx}, Ne={Ne}, reward += {-r1 + Ne * r3}")
                 else: 
                     reward += 0 # fallback
                 self.left_path = False
@@ -517,14 +480,14 @@ class GazeboEnv:
 
         if self.last_distance > distance_to_goal:
             reward += (self.last_distance - distance_to_goal) * 100
-            rospy.loginfo(f"[Reward] LastDist: {self.last_distance:.2f} , CurrDistance {distance_to_goal:.2f}")
+            #rospy.loginfo(f"[Reward] LastDist: {self.last_distance:.2f} , CurrDistance {distance_to_goal:.2f}")
             
         else:
             if self.last_distance - distance_to_goal == 0:
                 reward -= distance_to_goal * 0.01
             else:
                 reward += (self.last_distance - distance_to_goal) * 100
-            rospy.loginfo(f"[Reward] LastDist: {self.last_distance:.2f} , CurrDistance {distance_to_goal:.2f}")
+            #rospy.loginfo(f"[Reward] LastDist: {self.last_distance:.2f} , CurrDistance {distance_to_goal:.2f}")
 
         self.last_distance = distance_to_goal
 
