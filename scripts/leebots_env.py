@@ -477,24 +477,24 @@ class GazeboEnv:
                 on_path = True
 
         # --- path 상태에 따른 reward ---
-        if on_path:
-            if hasattr(self, "left_path") and self.left_path:
-                # 복귀했을 때 last index에서 얼마나 이동했는지
-                if hasattr(self, "last_path_idx") and self.last_path_idx is not None:
-                    Ne = self.last_path_idx - curr_idx  # index 차이
-                    reward += -r1 + Ne * r3
-                    rospy.loginfo(f"[REJOIN PATH] From idx {self.last_path_idx} → {curr_idx}, Ne={Ne}, reward += {-r1 + Ne * r3}")
-                else: 
-                    reward += 0 # fallback
-                self.left_path = False
-            else:# 원래부터 path 위에 있었던 경우
-                reward += r1  # 정상적으로 path 위에 있음
-            self.last_path_idx = curr_idx
-        else:
-            reward += r1
-            if not hasattr(self, "left_path") or not self.left_path:
-                self.left_path = True
-                self.last_path_idx = curr_idx  # path 벗어나기 전 index 저장
+        # if on_path:
+        #     if hasattr(self, "left_path") and self.left_path:
+        #         # 복귀했을 때 last index에서 얼마나 이동했는지
+        #         if hasattr(self, "last_path_idx") and self.last_path_idx is not None:
+        #             Ne = self.last_path_idx - curr_idx  # index 차이
+        #             reward += -r1 + Ne * r3
+        #             rospy.loginfo(f"[REJOIN PATH] From idx {self.last_path_idx} → {curr_idx}, Ne={Ne}, reward += {-r1 + Ne * r3}")
+        #         else: 
+        #             reward += 0 # fallback
+        #         self.left_path = False
+        #     else:# 원래부터 path 위에 있었던 경우
+        #         reward += r1  # 정상적으로 path 위에 있음
+        #     self.last_path_idx = curr_idx
+        # else:
+        #     reward += r1
+        #     if not hasattr(self, "left_path") or not self.left_path:
+        #         self.left_path = True
+        #         self.last_path_idx = curr_idx  # path 벗어나기 전 index 저장
 
         # --- time penalty ---   
         reward -= self.timestep
@@ -530,6 +530,10 @@ class GazeboEnv:
             rospy.loginfo(f"[Reward] LastDist: {self.last_distance:.2f} , CurrDistance {distance_to_goal:.2f}")
 
         self.last_distance = distance_to_goal
+
+        # --- penalty of following global plan ---
+        penalty = dists[closest_idx] * r1
+        reward -= penalty
 
         # # distance to goal 
         # alpha = 10   # 최대 보상/페널티 크기
