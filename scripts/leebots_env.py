@@ -499,7 +499,6 @@ class GazeboEnv:
         # --- time penalty ---   
         reward -= self.timestep
 
-
         # --- global plan length reward ---
         if global_plan is not None and len(global_plan) > 0:
             if global_plan.ndim == 1:
@@ -545,6 +544,5 @@ class GazeboEnv:
         # if np.min(self.sensor_data) > 0.5:
         #     reward += (action[0]**2 + action[1]**2)**0.5 / 2 - abs(action[2]) / 2
         
-
 
         return reward
