@@ -58,6 +58,7 @@ class GazeboEnv:
         self.last_distance = None
         self.left_path = False
         self.last_path_idx = None
+        self.sensor_data = np.ones(self.environment_dim) * 10
 
         self.gaps = [[-np.pi / 2 - 0.03, -np.pi / 2 + np.pi / self.environment_dim]]
         for m in range(self.environment_dim - 1):
@@ -114,8 +115,12 @@ class GazeboEnv:
             f'gui:={"true" if self.gui else "false"}'
         ])
         time.sleep(5)  # Gazebo 로딩 대기
+        try:
+            node_name = f'gym_{self.world_idx}'
+            rospy.init_node(node_name)#, anonymous=True)#, log_level=rospy.FATAL)
+        except rospy.exceptions.ROSException as e:
+            print("Failed to initialize node:", str(e))
 
-        rospy.init_node('gym', anonymous=True) #, log_level=rospy.FATAL)
         rospy.set_param('/use_sim_time', True)
     
         self.gazebo_sim = GazeboSimulation(init_position=self.init_position)
@@ -134,9 +139,9 @@ class GazeboEnv:
             time.sleep(1)
 
     def init_ros(self):
-        self.vel_pub = rospy.Publisher("/jackal_velocity_controller/cmd_vel", Twist, queue_size=1)
-        self.odom = rospy.Subscriber("/jackal_velocity_controller/odom", Odometry, self.odom_callback, queue_size=1)
-        self.sensor = rospy.Subscriber("/front/scan", LaserScan, self.lidar_callback, queue_size=1)
+        self.vel_pub = rospy.Publisher("/jackal_velocity_controller/cmd_vel", Twist, queue_size=10)
+        self.odom = rospy.Subscriber("/jackal_velocity_controller/odom", Odometry, self.odom_callback, queue_size=10)
+        self.sensor = rospy.Subscriber("/front/scan", LaserScan, self.lidar_callback, queue_size=10)
         self.global_plan_sub = rospy.Subscriber("/move_base/NavfnROS/plan", Path, self.global_plan_callback, queue_size=10)
         self.set_state = rospy.Publisher("gazebo/set_model_state", ModelState, queue_size=10)
         self.plan_pub = rospy.Publisher("/td3_global_plan", Path, queue_size=10)
@@ -187,7 +192,7 @@ class GazeboEnv:
 
         global_plan = np.array(plan_points)
 
-        rospy.loginfo(f"Received global plan with {len(global_plan)} points")
+        #rospy.loginfo(f"Received global plan with {len(global_plan)} points")
 
     def get_global_plan(self, start_pos, goal_pos, tolerance=0.5):
         rospy.wait_for_service('/move_base/make_plan')
@@ -215,7 +220,7 @@ class GazeboEnv:
             for pose in path.poses:
                 plan_points.append([pose.pose.position.x, pose.pose.position.y])
 
-            rospy.loginfo(f"Global plan created with {len(plan_points)} points.")
+            #rospy.loginfo(f"Global plan created with {len(plan_points)} points.")
 
             return np.array(plan_points)
 
@@ -261,6 +266,7 @@ class GazeboEnv:
         vel_cmd.linear.y = action[1]
         vel_cmd.angular.z = action[2]
         self.vel_pub.publish(vel_cmd) #publish vel_cmd
+        #print(f"ACTION X: {action[0]:.2f}, Y: {action[1]:.2f}, Z: {action[2]:.2f} ")
 
         self.gazebo_sim.unpause()
         time.sleep(TIME_DELTA)  # 액션이 적용될 시간 동안 대기
@@ -272,8 +278,8 @@ class GazeboEnv:
         lidar_state = [l_state]
 
         # Calculate robot heading from odometry data
-        self.odom_x = self.last_odom.pose.pose.position.x
-        self.odom_y = self.last_odom.pose.pose.position.y
+        #self.odom_x = self.last_odom.pose.pose.position.x
+        #self.odom_y = self.last_odom.pose.pose.position.y
 
         pos = self.gazebo_sim.get_model_state().pose.position
         orientation = self.gazebo_sim.get_model_state().pose.orientation
@@ -365,8 +371,6 @@ class GazeboEnv:
             theta = -np.pi - theta
             theta = np.pi - theta
 
-
-
         l_state = []
         l_state = self.sensor_data[:]
         lidar_state = [l_state]
@@ -382,7 +386,14 @@ class GazeboEnv:
 
     def terminate(self):
         """Gazebo 환경 종료"""
+        kill_cmd = f"rosnode kill /odom_tf_broadcaster"
+        os.system(kill_cmd)
+        time.sleep(2)  
         self.gazebo_process.terminate()
+        time.sleep(2)  
+        os.system("killall -9 gzserver roslaunch rosout gzclient")
+        time.sleep(2)
+        
 
     def observe_collision(self):
 

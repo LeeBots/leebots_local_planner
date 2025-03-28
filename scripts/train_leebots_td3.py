@@ -11,14 +11,14 @@ from torch.utils.tensorboard import SummaryWriter
 from replay_buffer import ReplayBuffer
 from leebots_env import GazeboEnv
 
-def evaluate(network, epoch, eval_episodes=10):
+def evaluate(env, network, epoch, eval_episodes=10):
     avg_reward = 0.0
     col = 0
     for _ in range(eval_episodes):
         count = 0
         state = env.reset()
         done = False
-        while not done and count < 501:
+        while not done and count < 501: 
             action = network.get_action(np.array(state))
             a_in = [(action[0] + 1) / 2, action[1], action[2]]
             state, reward, done, _ = env.step(a_in)
@@ -214,145 +214,167 @@ class TD3(object):
             torch.load("%s/%s_critic.pth" % (directory, filename))
         )
 
-
 # Set the parameters for the implementation
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")  # cuda or cpu
-seed = 0  # Random seed number
-eval_freq = 2e3  # After how many steps to perform the evaluation
-max_ep = 500  # maximum number of steps per episode
-eval_ep = 10  # number of episodes for evaluation
-max_timesteps = 5e6  # Maximum number of steps to perform
-expl_noise = 1  # Initial exploration noise starting value in range [expl_min ... 1]
-expl_decay_steps = (
-    500000  # Number of steps over which the initial exploration noise will decay over
-)
-expl_min = 0.3  # Exploration noise after the decay in range [0...expl_noise]
-batch_size = 40  # Size of the mini-batch
-discount = 0.99999  # Discount factor to calculate the discounted future reward (should be close to 1)
-tau = 0.005  # Soft target update variable (should be close to 0)
-policy_noise = 0.2  # Added noise for exploration
-noise_clip = 0.5  # Maximum clamping values of the noise
-policy_freq = 2  # Frequency of Actor network updates
-buffer_size = 1e6  # Maximum size of the buffer
-file_name = "leebots"  # name of the file to store the policy
-save_model = True  # Weather to save the model or not
-load_model = False  # Weather to load a stored model
 
-# Create the network storage folders
-if not os.path.exists("./results"):
-    os.makedirs("./results")
-if save_model and not os.path.exists("./pytorch_models"):
-    os.makedirs("./pytorch_models")
+def main():
+    
+    seed = 0  # Random seed number
+    eval_freq = 2e3  # After how many steps to perform the evaluation
+    max_ep = 500  # maximum number of steps per episode
+    eval_ep = 10  # number of episodes for evaluation
+    max_timesteps = 5e6  # Maximum number of steps to perform
+    expl_noise = 1  # Initial exploration noise starting value in range [expl_min ... 1]
+    expl_decay_steps = (
+        500000  # Number of steps over which the initial exploration noise will decay over
+    )
+    expl_min = 0.3  # Exploration noise after the decay in range [0...expl_noise]
+    batch_size = 40  # Size of the mini-batch
+    discount = 0.99999  # Discount factor to calculate the discounted future reward (should be close to 1)
+    tau = 0.005  # Soft target update variable (should be close to 0)
+    policy_noise = 0.2  # Added noise for exploration
+    noise_clip = 0.5  # Maximum clamping values of the noise
+    policy_freq = 2  # Frequency of Actor network updates
+    buffer_size = 1e6  # Maximum size of the buffer
+    file_name = "leebots"  # name of the file to store the policy
+    save_model = True  # Weather to save the model or not
+    load_model = True  # Weather to load a stored model
 
-# Create the training environment
-environment_dim = 100
-robot_dim = 5
+    # Create the network storage folders
+    if not os.path.exists("./results"):
+        os.makedirs("./results")
+    if save_model and not os.path.exists("./pytorch_models"):
+        os.makedirs("./pytorch_models")
 
+    # Create the training environment
+    environment_dim = 100
+    robot_dim = 5
+    world_idx = 0
+    env = GazeboEnv(world_idx=world_idx, gui=True, environment_dim=environment_dim)
 
-###
-world_idx = 182
-env = GazeboEnv(world_idx=world_idx, gui=True, environment_dim=environment_dim)
-##
+    time.sleep(5)
+    torch.manual_seed(seed)
+    np.random.seed(seed)
+    state_dim = environment_dim + robot_dim
+    action_dim = 3
+    max_action = 3
 
-time.sleep(5)
-torch.manual_seed(seed)
-np.random.seed(seed)
-state_dim = environment_dim + robot_dim
-action_dim = 3
-max_action = 3
+    # Create the network
+    network = TD3(state_dim, action_dim, max_action)
+    # Create a replay buffer
+    replay_buffer = ReplayBuffer(buffer_size, seed)
+    if load_model:
+        try:
+            network.load(file_name, "./pytorch_models")
+        except:
+            print(
+                "Could not load the stored model parameters, initializing training with random parameters"
+            )
 
-# Create the network
-network = TD3(state_dim, action_dim, max_action)
-# Create a replay buffer
-replay_buffer = ReplayBuffer(buffer_size, seed)
-if load_model:
-    try:
-        network.load(file_name, "./pytorch_models")
-    except:
-        print(
-            "Could not load the stored model parameters, initializing training with random parameters"
+    # Create evaluation data store
+    evaluations = []
+
+    timestep = 0
+    timesteps_since_eval = 0
+    episode_num = 0
+    done = True
+    epoch = 1
+
+    count_rand_actions = 0
+    random_action = []
+
+    # Begin the training loop
+    while timestep < max_timesteps:
+        # On termination of episode
+        if done:
+            if timestep != 0:
+                network.train(
+                    replay_buffer,
+                    episode_timesteps,
+                    batch_size,
+                    discount,
+                    tau,
+                    policy_noise,
+                    noise_clip,
+                    policy_freq,
+                )
+
+            if timesteps_since_eval >= eval_freq:
+                print("Validating")
+                timesteps_since_eval %= eval_freq
+                evaluations.append(
+                    evaluate(env = env, network=network, epoch=epoch, eval_episodes=eval_ep)
+                )
+                network.save(file_name, directory="./pytorch_models")
+                np.save("./results/%s" % (file_name), evaluations)
+                epoch += 1
+
+                env.terminate()
+                world_idx += 1
+                time.sleep(5)
+                env = GazeboEnv(world_idx=world_idx, gui=True, environment_dim=environment_dim)
+                time.sleep(5)
+
+            state = env.reset()
+            #print(np.array(state).shape)
+            done = False
+
+            episode_reward = 0
+            episode_timesteps = 0
+            episode_num += 1
+            print(f"Episode {episode_num} reward: {episode_reward}")
+
+        # add some exploration noise
+        if expl_noise > expl_min:
+            expl_noise = expl_noise - ((1 - expl_min) / expl_decay_steps)
+
+        
+        action = network.get_action(np.array(state))
+        action = (action + np.random.normal(0, expl_noise, size=action_dim)).clip(
+            -max_action, max_action
         )
 
-# Create evaluation data store
-evaluations = []
-
-timestep = 0
-timesteps_since_eval = 0
-episode_num = 0
-done = True
-epoch = 1
-
-count_rand_actions = 0
-random_action = []
-
-# Begin the training loop
-while timestep < max_timesteps:
-
-    # On termination of episode
-    if done:
-        if timestep != 0:
-            network.train(
-                replay_buffer,
-                episode_timesteps,
-                batch_size,
-                discount,
-                tau,
-                policy_noise,
-                noise_clip,
-                policy_freq,
-            )
-
-        if timesteps_since_eval >= eval_freq:
-            print("Validating")
-            timesteps_since_eval %= eval_freq
-            evaluations.append(
-                evaluate(network=network, epoch=epoch, eval_episodes=eval_ep)
-            )
-            network.save(file_name, directory="./pytorch_models")
-            np.save("./results/%s" % (file_name), evaluations)
-            epoch += 1
-
-        state = env.reset()
-        #print(np.array(state).shape)
-        done = False
-
-        episode_reward = 0
-        episode_timesteps = 0
-        episode_num += 1
+        # Update action to fall in range [-1,1] for linear velocity and [-1,1] for angular velocity
+        a_in = [action[0], action[1], action[2]]
+        next_state, reward, done, target = env.step(a_in)
+        done_bool = 0 if episode_timesteps + 1 == max_ep else int(done)
+        done = 1 if episode_timesteps + 1 == max_ep else int(done)
+        episode_reward += reward
         print(f"Episode {episode_num} reward: {episode_reward}")
+        # Save the tuple in replay buffer
+        replay_buffer.add(state, action, reward, done_bool, next_state)
+
+        # Update the counters
+        state = next_state
+        episode_timesteps += 1
+        timestep += 1
+        timesteps_since_eval += 1
+    # After the training is done, evaluate the network and save it
+    print("Validating")
+    evaluations.append(evaluate(env = env, network=network, epoch=epoch, eval_episodes=eval_ep))
+    print("Done evaluate")
+    if save_model:
+        network.save("%s" % file_name, directory="./pytorch_models")
+    print("Done save model")
+    np.save("./results/%s" % file_name, evaluations)
+
+    print("Save results")
+
+    return
+
+if __name__ == "__main__":
+    world_idx = 0
+    environment_dim = 100
+
+    #while True:
+        ###    
+    #env = GazeboEnv(world_idx=world_idx, gui=True, environment_dim=environment_dim)
+        ###
+    main()
+    #    env.terminate()
+    #    world_idx += 1
+        # wait terminating
+    #    time.sleep(5) 
+    #    print("New world")
 
 
-    # add some exploration noise
-    if expl_noise > expl_min:
-        expl_noise = expl_noise - ((1 - expl_min) / expl_decay_steps)
-
-    
-    action = network.get_action(np.array(state))
-    action = (action + np.random.normal(0, expl_noise, size=action_dim)).clip(
-        -max_action, max_action
-    )
-
-    # Update action to fall in range [-1,1] for linear velocity and [-1,1] for angular velocity
-    a_in = [action[0], action[1], action[2]]
-    next_state, reward, done, target = env.step(a_in)
-    done_bool = 0 if episode_timesteps + 1 == max_ep else int(done)
-    done = 1 if episode_timesteps + 1 == max_ep else int(done)
-    episode_reward += reward
-    print(f"Episode {episode_num} reward: {episode_reward}")
-    # Save the tuple in replay buffer
-    replay_buffer.add(state, action, reward, done_bool, next_state)
-
-    # Update the counters
-    state = next_state
-    episode_timesteps += 1
-    timestep += 1
-    timesteps_since_eval += 1
-
-# After the training is done, evaluate the network and save it
-evaluations.append(evaluate(network=network, epoch=epoch, eval_episodes=eval_ep))
-if save_model:
-    network.save("%s" % file_name, directory="./models")
-np.save("./results/%s" % file_name, evaluations)
-
-
-env.terminate()
