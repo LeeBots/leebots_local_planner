@@ -41,6 +41,8 @@ python3 run.py --world_idx 0
 $cd ~/barn_ws/jackal_ws/src/leebots_local_planner/scripts
 $source ../../../devel/setup.sh
 $python3 train_leebots_td3.py
+
+$killall -9 gzserver roslaunch rosmaster rosout gzclient
 ```
 
 #### reference code
