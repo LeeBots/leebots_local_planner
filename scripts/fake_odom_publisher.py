@@ -15,7 +15,7 @@ def publish_odom_tf(gazebo, odom_broad, odom_pub):
     twist_l = gazebo.get_model_state().twist.linear
     twist_a = gazebo.get_model_state().twist.angular
 
-    print(f"CUR: {pos}, TIME: {current_time}")
+    #print(f"CUR: {pos}, TIME: {current_time}")
 
     odom_trans = TransformStamped()
     odom_trans.header.stamp = current_time

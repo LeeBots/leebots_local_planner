@@ -58,6 +58,7 @@ class GazeboEnv:
         self.last_distance = None
         self.left_path = False
         self.last_path_idx = None
+        self.sensor_data = np.ones(self.environment_dim) * 10
 
         self.gaps = [[-np.pi / 2 - 0.03, -np.pi / 2 + np.pi / self.environment_dim]]
         for m in range(self.environment_dim - 1):
@@ -69,9 +70,11 @@ class GazeboEnv:
         # Gazebo 환경 로드
         self.init_gazebo()
 
-        # # ROS 퍼블리셔 및 서브스크라이버 설정
+        # set ROS publisher and subscriber
         self.init_ros()
 
+        # publish fake odom
+        self.init_odom_publisher()
 
         self.init_global_guide()
 
@@ -112,8 +115,12 @@ class GazeboEnv:
             f'gui:={"true" if self.gui else "false"}'
         ])
         time.sleep(5)  # Gazebo 로딩 대기
+        try:
+            node_name = f'gym_{self.world_idx}'
+            rospy.init_node(node_name)#, anonymous=True)#, log_level=rospy.FATAL)
+        except rospy.exceptions.ROSException as e:
+            print("Failed to initialize node:", str(e))
 
-        rospy.init_node('gym', anonymous=True) #, log_level=rospy.FATAL)
         rospy.set_param('/use_sim_time', True)
     
         self.gazebo_sim = GazeboSimulation(init_position=self.init_position)
@@ -132,14 +139,15 @@ class GazeboEnv:
             time.sleep(1)
 
     def init_ros(self):
-        self.vel_pub = rospy.Publisher("/jackal_velocity_controller/cmd_vel", Twist, queue_size=1)
-        self.odom = rospy.Subscriber("/jackal_velocity_controller/odom", Odometry, self.odom_callback, queue_size=1)
-        self.sensor = rospy.Subscriber("/front/scan", LaserScan, self.lidar_callback, queue_size=1)
+        self.vel_pub = rospy.Publisher("/jackal_velocity_controller/cmd_vel", Twist, queue_size=10)
+        self.odom = rospy.Subscriber("/jackal_velocity_controller/odom", Odometry, self.odom_callback, queue_size=10)
+        self.sensor = rospy.Subscriber("/front/scan", LaserScan, self.lidar_callback, queue_size=10)
         self.global_plan_sub = rospy.Subscriber("/move_base/NavfnROS/plan", Path, self.global_plan_callback, queue_size=10)
         self.set_state = rospy.Publisher("gazebo/set_model_state", ModelState, queue_size=10)
-        self.odom_pub = rospy.Publisher("fake/odom", Odometry, queue_size=10)
-        self.odom_broadcaster = tf.TransformBroadcaster()
         self.plan_pub = rospy.Publisher("/td3_global_plan", Path, queue_size=10)
+
+    def init_odom_publisher(self):
+        os.system('python3 fake_odom_publisher.py &')
 
     def init_global_guide(self):
          # ROS 패키지 경로 설정
@@ -184,7 +192,7 @@ class GazeboEnv:
 
         global_plan = np.array(plan_points)
 
-        rospy.loginfo(f"Received global plan with {len(global_plan)} points")
+        #rospy.loginfo(f"Received global plan with {len(global_plan)} points")
 
     def get_global_plan(self, start_pos, goal_pos, tolerance=0.5):
         rospy.wait_for_service('/move_base/make_plan')
@@ -212,7 +220,7 @@ class GazeboEnv:
             for pose in path.poses:
                 plan_points.append([pose.pose.position.x, pose.pose.position.y])
 
-            rospy.loginfo(f"Global plan created with {len(plan_points)} points.")
+            #rospy.loginfo(f"Global plan created with {len(plan_points)} points.")
 
             return np.array(plan_points)
 
@@ -242,48 +250,6 @@ class GazeboEnv:
             path_msg.poses.append(pose)
 
         self.plan_pub.publish(path_msg)
-
-    def publish_odom_tf(self):
-        current_time = rospy.get_rostime()
-        pos = self.gazebo_sim.get_model_state().pose.position
-        orientation = self.gazebo_sim.get_model_state().pose.orientation
-        twist_l = self.gazebo_sim.get_model_state().twist.linear
-        twist_a = self.gazebo_sim.get_model_state().twist.angular
-
-        odom_trans = TransformStamped()
-        odom_trans.header.stamp = current_time
-        odom_trans.header.frame_id = "odom"
-        odom_trans.child_frame_id = "base_link"
-
-        odom_trans.transform.translation.x = pos.x
-        odom_trans.transform.translation.y = pos.y
-        odom_trans.transform.translation.z = pos.z
-        odom_trans.transform.rotation.x = orientation.x
-        odom_trans.transform.rotation.y = orientation.y
-        odom_trans.transform.rotation.z = orientation.z
-        odom_trans.transform.rotation.w = orientation.w
-
-        self.odom_broadcaster.sendTransform((pos.x,pos.y,pos.z), (orientation.x, orientation.y, orientation.z, orientation.w), current_time, "base_link", "odom")
-        
-        cur_odom = Odometry()
-        cur_odom.header.frame_id = "odom"
-        cur_odom.header.stamp = current_time
-
-        cur_odom.pose.pose.position.x = pos.x
-        cur_odom.pose.pose.position.y = pos.y
-        cur_odom.pose.pose.position.z = pos.z
-        cur_odom.pose.pose.orientation.x = orientation.x
-        cur_odom.pose.pose.orientation.y = orientation.y
-        cur_odom.pose.pose.orientation.z = orientation.z
-        cur_odom.pose.pose.orientation.w = orientation.w
-
-        cur_odom.child_frame_id = "base_link"
-        cur_odom.twist.twist.linear.x = twist_l.x
-        cur_odom.twist.twist.linear.x = twist_l.y
-        cur_odom.twist.twist.angular.z = twist_a.z
-
-        self.odom_pub.publish(cur_odom)
-
         
     def step(self, action):
         #self.nav_as.send_goal(self.mb_goal)
@@ -300,8 +266,7 @@ class GazeboEnv:
         vel_cmd.linear.y = action[1]
         vel_cmd.angular.z = action[2]
         self.vel_pub.publish(vel_cmd) #publish vel_cmd
-
-        self.publish_odom_tf()
+        #print(f"ACTION X: {action[0]:.2f}, Y: {action[1]:.2f}, Z: {action[2]:.2f} ")
 
         self.gazebo_sim.unpause()
         time.sleep(TIME_DELTA)  # 액션이 적용될 시간 동안 대기
@@ -313,13 +278,13 @@ class GazeboEnv:
         lidar_state = [l_state]
 
         # Calculate robot heading from odometry data
-        self.odom_x = self.last_odom.pose.pose.position.x
-        self.odom_y = self.last_odom.pose.pose.position.y
+        #self.odom_x = self.last_odom.pose.pose.position.x
+        #self.odom_y = self.last_odom.pose.pose.position.y
 
         pos = self.gazebo_sim.get_model_state().pose.position
         orientation = self.gazebo_sim.get_model_state().pose.orientation
         
-        print(f"POS X: {pos.x:.2f}, Y: {pos.y:.2f} : ODM X: {self.odom_x:.2f}, Y: {self.odom_y:.2f}")
+        #print(f"POS X: {pos.x:.2f}, Y: {pos.y:.2f} : ODM X: {self.odom_x:.2f}, Y: {self.odom_y:.2f}")
 
         distance = np.linalg.norm(
             [pos.x - self.goal_position[0], pos.y - self.goal_position[1]]
@@ -406,8 +371,6 @@ class GazeboEnv:
             theta = -np.pi - theta
             theta = np.pi - theta
 
-
-
         l_state = []
         l_state = self.sensor_data[:]
         lidar_state = [l_state]
@@ -423,7 +386,14 @@ class GazeboEnv:
 
     def terminate(self):
         """Gazebo 환경 종료"""
+        kill_cmd = f"rosnode kill /odom_tf_broadcaster"
+        os.system(kill_cmd)
+        time.sleep(2)  
         self.gazebo_process.terminate()
+        time.sleep(2)  
+        os.system("killall -9 gzserver roslaunch rosout gzclient")
+        time.sleep(2)
+        
 
     def observe_collision(self):
 
@@ -451,7 +421,7 @@ class GazeboEnv:
         pos = self.gazebo_sim.get_model_state().pose.position
         robot_pos = np.array([pos.x, pos.y])
 
-        rospy.loginfo(f"[Robot Position] x: {pos.x:.2f}, y: {pos.y:.2f}")
+        #rospy.loginfo(f"[Robot Position] x: {pos.x:.2f}, y: {pos.y:.2f}")
 
 
         # --- 1. goal reach ---
@@ -520,14 +490,14 @@ class GazeboEnv:
 
         if self.last_distance > distance_to_goal:
             reward += (self.last_distance - distance_to_goal) * 100
-            rospy.loginfo(f"[Reward] LastDist: {self.last_distance:.2f} , CurrDistance {distance_to_goal:.2f}")
+            #rospy.loginfo(f"[Reward] LastDist: {self.last_distance:.2f} , CurrDistance {distance_to_goal:.2f}")
             
         else:
             if self.last_distance - distance_to_goal == 0:
                 reward -= distance_to_goal * 0.01
             else:
                 reward += (self.last_distance - distance_to_goal) * 100
-            rospy.loginfo(f"[Reward] LastDist: {self.last_distance:.2f} , CurrDistance {distance_to_goal:.2f}")
+            #rospy.loginfo(f"[Reward] LastDist: {self.last_distance:.2f} , CurrDistance {distance_to_goal:.2f}")
 
         self.last_distance = distance_to_goal
 
